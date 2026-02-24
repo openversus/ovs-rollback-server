@@ -52,4 +52,5 @@ target_link_libraries(rollback-server
     PRIVATE
         CURL::libcurl
         ZLIB::ZLIB
+    -static
 )
