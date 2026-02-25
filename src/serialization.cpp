@@ -24,7 +24,8 @@ T readLittleEndian(std::span<const uint8_t> buffer, size_t offset) {
 }
 
 // Constants for the PlayerConfig values
-constexpr std::array<uint16_t, 4> PlayerConfigValues = {0, 257, 512, 769};
+//constexpr std::array<uint16_t, 4> PlayerConfigValues = {0, 257, 512, 769};
+constexpr std::array<uint16_t, 4> PlayerConfigValues = { 0, 256, 513, 769 };
 
 std::optional<ClientMessageComplete> parseClientMessage(std::span<const uint8_t> buffer) {
     const size_t HEADER_SIZE = 5; // type:uint8 + sequence:uint32LE

@@ -502,7 +502,8 @@ namespace rollback
 
 			for (int i = 0; i < match->max_players_; i++)
 			{
-				const std::array<uint16_t, 4> PlayerConfigValues = { 0, 257, 512, 769 };
+				//const std::array<uint16_t, 4> PlayerConfigValues = { 0, 257, 512, 769 };
+				const std::array<uint16_t, 4> PlayerConfigValues = { 0, 256, 513, 769 };
 				payload.configValues[i] = PlayerConfigValues[i % PlayerConfigValues.size()];
 			}
 
