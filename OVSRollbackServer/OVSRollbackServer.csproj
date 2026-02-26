@@ -6,6 +6,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Rollback</RootNamespace>
+    <!-- Server GC: dedicated GC threads, shorter pauses under allocation pressure -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <!-- Concurrent GC: collections happen alongside application threads -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <!-- Tiered PGO: JIT uses runtime profile data for better codegen on hot paths -->
+    <TieredPGO>true</TieredPGO>
+    <!-- Required for SkipLocalsInit attribute (optional, used on hot serializer) -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <ItemGroup Label="PackageReferences">
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.3" />
+  </ItemGroup>
+
 </Project>
 
