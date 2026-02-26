@@ -1,52 +1,29 @@
-# ---- Build stage (AMD64) ----
-FROM node:24-trixie AS builder
+# See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    g++ \
-    cmake \
-    git \
-    curl \
-    pkg-config \
-    ninja-build \
-    zip \
-    unzip
+# This stage is used when running from VS in fast mode (Default for Debug configuration)
+FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+USER $APP_UID
+WORKDIR /app
 
-RUN git clone --depth=1 https://github.com/microsoft/vcpkg /opt/vcpkg \
- && /opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics
 
-ENV VCPKG_ROOT=/opt/vcpkg
-
+# This stage is used to build the service project
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
-COPY . /src
+COPY ["OVSRollbackServer/OVSRollbackServer.csproj", "OVSRollbackServer/"]
+RUN dotnet restore "./OVSRollbackServer/OVSRollbackServer.csproj"
+COPY . .
+WORKDIR "/src/OVSRollbackServer"
+RUN dotnet build "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/build
 
-# (Optional) Install system libs if you need them
-RUN apt-get install -y libssl-dev ninja-build generate-ninja
+# This stage is used to publish the service project to be copied to the final stage
+FROM build AS publish
 
-# Install vcpkg deps (manifest mode)
-RUN /opt/vcpkg/vcpkg install --triplet x64-linux
+ARG BUILD_CONFIGURATION=Release
+RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
-# Build
-RUN cmake -B build \
-    -S . \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
-    -DVCPKG_BUILD_TYPE=release \
-    -DVCPKG_TARGET_TRIPLET=x64-linux \
-    -G Ninja \
- && cmake --build build
-
-RUN strip /src/build/rollback-server
-
-FROM gcr.io/distroless/static-debian13:nonroot AS artifact
-
-# Copy only the built binary
-COPY --from=builder /src/build/rollback-server /rollback-server
-
-ARG OVS_SERVER=http://testing.openversus.org:8000
-ENV OVS_SERVER=${OVS_SERVER}
-EXPOSE 57000-58000
-
-# Default to running the binary, but allow shell override
-ENTRYPOINT ["/rollback-server"]
+# This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
+FROM base AS final
+WORKDIR /app
+COPY --from=publish /app/publish .
+ENTRYPOINT ["dotnet", "OVSRollbackServer.dll"]
