@@ -6,6 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Rollback</RootNamespace>
+    <AssemblyName>OVS.Rollback.Server</AssemblyName>
     <!-- Server GC: dedicated GC threads, shorter pauses under allocation pressure -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <!-- Concurrent GC: collections happen alongside application threads -->

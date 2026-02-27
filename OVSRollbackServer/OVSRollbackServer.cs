@@ -65,12 +65,21 @@ namespace OVS.Rollback
             MeterProvider? meterProvider = null;
             if (config.Logging.EnableMetrics)
             {
-                meterProvider = Sdk.CreateMeterProviderBuilder()
-                    .AddMeter("OVS.Server.OVS")
-                    .AddConsoleExporter()
-                    .Build();
+                if (config.Logging.EnableConsoleMetrics)
+                {
+                    meterProvider = Sdk.CreateMeterProviderBuilder()
+                        .AddMeter("OVS.Rollback.Server")
+                        .AddConsoleExporter()
+                        .Build();
+                }
+                else
+                {
+                    meterProvider = Sdk.CreateMeterProviderBuilder()
+                        .AddMeter("OVS.Rollback.Server")
+                        .Build();
+                }
 
-                logger.LogInformation("{LogPrefix} Metrics enabled - exporting to console", LogPrefix);
+                    logger.LogInformation("{LogPrefix} Metrics enabled - exporting to console", LogPrefix);
             }
             else
             {

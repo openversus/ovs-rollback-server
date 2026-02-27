@@ -12,12 +12,12 @@ namespace OVS.Rollback.Utils
     /// Centralized metrics for the rollback server.
     ///
     /// Monitor live with:
-    ///   dotnet-counters monitor --name RollbackServer --counters OVS.Rollback.Server
+    ///   dotnet-counters monitor --name OVS.Rollback.Server --counters OVS.Rollback.Server
     /// </summary>
 
     public static class ServerMetrics
     {
-        private static readonly Meter s_meter = new("OVS.Rollback.Server", "2026.02.25");
+        private static readonly Meter s_meter = new("OVS.Rollback.Server", "2026.02.27");
 
         // ── Tick loop ──
         public static readonly Counter<long> TicksProcessed =

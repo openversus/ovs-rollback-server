@@ -177,6 +177,7 @@ namespace OVS.Rollback.Configuration
             // Logging settings
             Logging.MinimumLevel = GetEnvString("Logging__MinimumLevel", Logging.MinimumLevel) ?? "Information";
             Logging.EnableMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableMetrics);
+            Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableConsoleMetrics);
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
@@ -283,6 +284,7 @@ namespace OVS.Rollback.Configuration
     {
         public string MinimumLevel { get; set; } = "Information";
         public bool EnableMetrics { get; set; } = true;
+        public bool EnableConsoleMetrics { get; set; } = false;
         public bool EnableDebugLogs { get; set; } = false;
         public bool LogTickPerformance { get; set; } = true;
         public int TickPerformanceInterval { get; set; } = 500;
