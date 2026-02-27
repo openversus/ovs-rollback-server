@@ -12,12 +12,12 @@ namespace OVS.Rollback.Utils
     /// Centralized metrics for the rollback server.
     ///
     /// Monitor live with:
-    ///   dotnet-counters monitor --name RollbackServer --counters OVS.Server.OVS
+    ///   dotnet-counters monitor --name RollbackServer --counters OVS.Rollback.Server
     /// </summary>
 
     public static class ServerMetrics
     {
-        private static readonly Meter s_meter = new("OVS.Server.OVS", "2026.02.25");
+        private static readonly Meter s_meter = new("OVS.Rollback.Server", "2026.02.25");
 
         // ── Tick loop ──
         public static readonly Counter<long> TicksProcessed =
@@ -44,6 +44,22 @@ namespace OVS.Rollback.Utils
             s_meter.CreateCounter<long>("rollback.input.predictions");
         public static readonly Counter<long> BitPackFallbacks =
                 s_meter.CreateCounter<long>("rollback.bitpack.fallbacks");
+
+        // ── Input validation & security ──
+        public static readonly Counter<long> InputsRateLimited =
+            s_meter.CreateCounter<long>("rollback.inputs.rate_limited");
+        public static readonly Counter<long> InputsRejectedFuture =
+            s_meter.CreateCounter<long>("rollback.inputs.rejected_future");
+        public static readonly Counter<long> InputsRejectedPast =
+            s_meter.CreateCounter<long>("rollback.inputs.rejected_past");
+        public static readonly Counter<long> InputDuplicates =
+            s_meter.CreateCounter<long>("rollback.inputs.duplicates");
+
+        // ── Desync detection ──
+        public static readonly Counter<long> DesyncsDetected =
+            s_meter.CreateCounter<long>("rollback.desyncs.detected");
+        public static readonly Counter<long> ChecksumsProcessed =
+            s_meter.CreateCounter<long>("rollback.checksums.processed");
 
         // ── Match lifecycle ──
         public static readonly Counter<long> MatchesStarted =

@@ -6,38 +6,24 @@ using System.Text;
 namespace OVS.Rollback.Core
 {
     /// <summary>
-    /// Predicts missing player input using input tendency weighting.
+    /// Predicts missing player input using simplified platform fighter heuristic.
     ///
-    /// Fighting-game heuristic:
-    ///   - Directional inputs (d-pad/stick) change rapidly → decay to neutral
-    ///     after a grace period.
-    ///   - Button inputs (attack/block/etc.) are often held → preserve them
-    ///     longer before decaying.
+    /// For platform fighters:
+    ///   - Inputs are critical and fast-paced
+    ///   - Very short grace period (2 frames)
+    ///   - Then immediately go neutral to avoid phantom inputs
     ///
-    /// This is only called in the server-side prediction branch when a player's
-    /// input is missing beyond the grace period. It does NOT affect:
-    ///   - Rift calculation
-    ///   - Frame timing
-    ///   - Wire format (the predicted uint is stored in the same Inputs map)
+    /// This avoids the "wrong direction aerial" problem where button inputs
+    /// are preserved but directional inputs decay, causing attacks in 
+    /// unintended directions.
     /// </summary>
     public static class InputPredictor
     {
-        // ── Bit layout (matches client input encoding) ──
-        //
-        //  Bits  0–3:  Directional inputs (d-pad / left stick)
-        //  Bits  4–15: Button inputs (attack, block, special, etc.)
-        //
-        private const uint DirectionalMask = 0x000F; // bottom 4 bits
-        private const uint ButtonMask = 0xFFF0; // upper 12 bits (within uint16 range)
-
-        // ── Decay thresholds (in frames of missing input) ──
-        //
-        //  < DirectionalDecay : repeat last input verbatim (same as before)
-        //  ≥ DirectionalDecay : release directional, keep buttons
-        //  ≥ FullDecay        : release everything → neutral (0)
-        //
-        private const uint DirectionalDecayThreshold = 4;
-        private const uint FullDecayThreshold = 15;
+        // All 32 bits used for input (no specific mask needed for prediction)
+        // We simply repeat or go neutral
+        
+        // Grace period: only 2 frames before going neutral
+        private const uint GracePeriodFrames = 2;
 
         /// <summary>
         /// Predict input given the last known input and how many frames
@@ -50,16 +36,12 @@ namespace OVS.Rollback.Core
         /// <returns>Predicted input value for the current frame.</returns>
         public static uint Predict(uint lastInput, uint framesMissed)
         {
-            // Phase 1: repeat verbatim (player likely still holding the same input)
-            if (framesMissed < DirectionalDecayThreshold)
+            // Short grace period: repeat verbatim for 2 frames
+            if (framesMissed < GracePeriodFrames)
                 return lastInput;
 
-            // Phase 2: release directions, keep buttons
-            // (players change direction frequently but tend to hold buttons)
-            if (framesMissed < FullDecayThreshold)
-                return lastInput & ButtonMask;
-
-            // Phase 3: full neutral — we have no idea what the player is doing
+            // After grace period: go neutral immediately
+            // This prevents phantom inputs in platform fighters
             return 0;
         }
     }

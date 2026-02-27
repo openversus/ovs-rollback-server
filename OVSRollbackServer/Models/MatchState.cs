@@ -25,10 +25,16 @@ namespace OVS.Rollback.Models
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];
 
+        // ── Desync detection: frame → (playerIndex → checksum) ──
+        public ConcurrentDictionary<uint, ConcurrentDictionary<int, uint>> FrameChecksums { get; } = new();
+
         // ── Sequence & ping tracking ──
         public uint SequenceCounter { get; set; } = uint.MaxValue;
         public uint PingPhaseCount { get; set; }
         public uint PingPhaseTotal { get; set; }
+
+        // ── Ping phase timer (prevents GC) ──
+        public System.Threading.Timer? PingPhaseTimer { get; set; }
 
         // ── Tick loop control ──
         private int _tickRunning;

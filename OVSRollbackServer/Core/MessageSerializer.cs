@@ -360,17 +360,23 @@ namespace OVS
             // ── Body ──
             w.WriteU8(payload.NumPlayers);
 
+            // FIX #1: Write all StartFrames first, then all NumFrames (matches standard path)
             for (int i = 0; i < maxPlayers; i++)
             {
                 w.WriteU32(payload.StartFrame[i]);
+            }
+            for (int i = 0; i < maxPlayers; i++)
+            {
                 w.WriteU8(payload.NumFrames[i]);
             }
 
             w.WriteU16(payload.NumPredictedOverrides);
             w.WriteU16(payload.NumZeroedOverrides);
             w.WriteI16(payload.Ping);
-            w.WriteU8((byte)payload.PacketsLossPercent); // FIX: Cast short to byte
-            w.WriteF32(payload.Rift);
+            // FIX #2: Write PacketsLossPercent as short (2 bytes), not byte
+            w.WriteI16(payload.PacketsLossPercent);
+            // FIX #3: Write Rift as int16 scaled by 100 (matches standard path)
+            w.WriteI16((short)(payload.Rift * 100));
             w.WriteU32(payload.ChecksumAckFrame);
 
             for (int i = 0; i < maxPlayers; i++)

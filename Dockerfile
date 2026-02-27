@@ -26,4 +26,8 @@ RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+COPY ./OVSRollbackServer/appsettings.json /app/appsettings.json
+
+ARG OVS_SERVER=http://testing.openversus.org:8000
+ENV OVS_SERVER=${OVS_SERVER}
 ENTRYPOINT ["dotnet", "OVSRollbackServer.dll"]

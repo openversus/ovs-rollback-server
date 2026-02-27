@@ -6,10 +6,21 @@
     <ProjectGuid>81dded9d-158b-e303-5f62-77a2896d2a5a</ProjectGuid>
   </PropertyGroup>
   <ItemGroup>
+    <None Include="CONFIGURATION_GUIDE.md" />
+    <None Include="CONFIGURATION_IMPLEMENTATION_SUMMARY.md" />
+    <None Include="CPU_OPTIMIZATION_GUIDE.md" />
     <None Include="docker-compose.override.yml">
       <DependentUpon>docker-compose.yml</DependentUpon>
     </None>
     <None Include="docker-compose.yml" />
     <None Include=".dockerignore" />
+    <None Include="IMPLEMENTATION_SUMMARY.md" />
+    <None Include="INPUT_HISTORY_AND_DESYNC_IMPLEMENTATION.md" />
+    <None Include="METRICS_TROUBLESHOOTING.md" />
+    <None Include="PHASE1_TESTING_GUIDE.md" />
+    <None Include="PHASE2_IMPLEMENTATION_SUMMARY.md" />
+    <None Include="ROLLBACK_ARCHITECTURE_ANALYSIS.md" />
+    <None Include="ROLLBACK_FIXES_APPLIED.md" />
+    <None Include="ZERO_ALLOC_HOT_PATH_FIXES.md" />
   </ItemGroup>
 </Project>

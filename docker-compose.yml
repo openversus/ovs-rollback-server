@@ -1,9 +1,9 @@
 services:
-  ovs-rollback-server-csharp1: &ovs-rollback-server-csharp1
-    image: ovs-rollback-server-csharp:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
+  ovs-rollback-server-csharp-rework1: &ovs-rollback-server-csharp-rework1
+    image: ovs-rollback-server-csharp-rework:latest
+      build:
+        context: .
+        dockerfile: Dockerfile
     deploy:
       resources:
         limits:
@@ -15,103 +15,103 @@ services:
       - "57000:57000/udp"
     restart: unless-stopped
 
-  ovs-rollback-server-csharp2: &ovs-rollback-server-csharp2
-    <<: *ovs-rollback-server-csharp1
+  ovs-rollback-server-csharp-rework2: &ovs-rollback-server-csharp-rework2
+    <<: *ovs-rollback-server-csharp-rework1
     depends_on:
-      - ovs-rollback-server-csharp1
+      - ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57001"]
     ports:
       - "57001:57001/udp"
 
-  ovs-rollback-server-csharp3:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework3:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57002"]
     ports:
       - "57002:57002/udp"
-  ovs-rollback-server-csharp4:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework4:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57003"]
     ports:
       - "57003:57003/udp"
-  ovs-rollback-server-csharp5:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework5:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57004"]
     ports:
       - "57004:57004/udp"
-  ovs-rollback-server-csharp6:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework6:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57005"]
     ports:
       - "57005:57005/udp"
-  ovs-rollback-server-csharp7:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework7:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57006"]
     ports:
       - "57006:57006/udp"
-  ovs-rollback-server-csharp8:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework8:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57007"]
     ports:
       - "57007:57007/udp"
-  ovs-rollback-server-csharp9:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework9:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57008"]
     ports:
       - "57008:57008/udp"
 
-  ovs-rollback-server-csharp10:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework10:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57009"]
     ports:
       - "57009:57009/udp"
 
-  ovs-rollback-server-csharp11:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework11:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57010"]
     ports:
       - "57010:57010/udp"
-  ovs-rollback-server-csharp12:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework12:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57011"]
     ports:
       - "57011:57011/udp"
-  ovs-rollback-server-csharp13:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework13:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57012"]
     ports:
       - "57012:57012/udp"
-  ovs-rollback-server-csharp14:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework14:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57013"]
     ports:
       - "57013:57013/udp"
-  ovs-rollback-server-csharp15:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework15:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57014"]
     ports:
       - "57014:57014/udp"
-  ovs-rollback-server-csharp16:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework16:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57015"]
     ports:
       - "57015:57015/udp"
-  ovs-rollback-server-csharp17:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework17:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57016"]
     ports:
       - "57016:57016/udp"
-  ovs-rollback-server-csharp18:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework18:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57017"]
     ports:
       - "57017:57017/udp"
-  ovs-rollback-server-csharp19:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework19:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57018"]
     ports:
       - "57018:57018/udp"
-  ovs-rollback-server-csharp20:
-    <<: *ovs-rollback-server-csharp2
+  ovs-rollback-server-csharp-rework20:
+    <<: *ovs-rollback-server-csharp-rework1
     entrypoint: ["dotnet", "OVSRollbackServer.dll", "57019"]
     ports:
       - "57019:57019/udp"

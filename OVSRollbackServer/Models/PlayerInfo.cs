@@ -44,6 +44,15 @@ namespace OVS.Rollback.Models
         public ConcurrentDictionary<uint, uint> MissedInputs { get; } = new();
         public ConcurrentDictionary<uint, long> PendingPings { get; } = new();
 
+        // ── Desync detection (checksums from client) ──
+        public ConcurrentDictionary<uint, uint> Checksums { get; } = new();
+        public int DesyncCount { get; set; }
+        public uint FirstDesyncFrame { get; set; }
+
+        // ── Input rate limiting (anti-spam) ──
+        public int InputsSentThisSecond { get; set; }
+        public long LastInputRateLimitReset { get; set; } = Stopwatch.GetTimestamp();
+
         public bool Emulated { get; set; }
 
         public static float ClampFloat(float value, float maxRange)
