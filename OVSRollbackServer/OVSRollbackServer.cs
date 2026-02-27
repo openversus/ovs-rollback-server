@@ -8,6 +8,7 @@ using System;
 using System.Runtime.CompilerServices;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
+using System.Text;
 
 namespace OVS.Rollback
 {
@@ -65,21 +66,27 @@ namespace OVS.Rollback
             MeterProvider? meterProvider = null;
             if (config.Logging.EnableMetrics)
             {
+                string defaultMeterName = "OVS.Rollback.Server";
+                StringBuilder logEntry = new StringBuilder("{LogPrefix} Metrics enabled");
+
                 if (config.Logging.EnableConsoleMetrics)
                 {
                     meterProvider = Sdk.CreateMeterProviderBuilder()
-                        .AddMeter("OVS.Rollback.Server")
+                        .AddMeter(defaultMeterName)
                         .AddConsoleExporter()
                         .Build();
+                    logEntry.AppendLine(" - exporting to console");
                 }
                 else
                 {
                     meterProvider = Sdk.CreateMeterProviderBuilder()
-                        .AddMeter("OVS.Rollback.Server")
+                        .AddMeter(defaultMeterName)
                         .Build();
+
+                    logEntry.AppendLine($" - use dotnet-counters monitor -p {Environment.ProcessId} --counters \"{defaultMeterName}\"");
                 }
 
-                    logger.LogInformation("{LogPrefix} Metrics enabled - exporting to console", LogPrefix);
+                logger.LogInformation(logEntry.ToString());
             }
             else
             {
