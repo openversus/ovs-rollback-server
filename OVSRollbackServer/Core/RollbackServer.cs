@@ -1,14 +1,15 @@
 // RollbackServer.cs
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Configuration;
+using OVS.Rollback.Core;
 using OVS.Rollback.Models;
 using OVS.Rollback.Utils;
-using OVS.Rollback.Core;
-using OVS.Rollback.Configuration;
 using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -68,7 +69,7 @@ namespace OVS.Rollback.Core
 
             // Initialize HttpClient with configured timeout
             var config = ServerConfiguration.Instance;
-            _httpClient = new HttpClient { 
+            _httpClient = new HttpClient {
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };
 
@@ -88,8 +89,10 @@ namespace OVS.Rollback.Core
             _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
 
             // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
-            SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
+            GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
+            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
+            SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
             _udpTask = Task.Run(RunUdpServerAsync);
 
             string serverType = IsOVS ? "OVS" : (IsMVSI ? "MVSI" : "Unknown");
@@ -136,11 +139,10 @@ namespace OVS.Rollback.Core
             {
                 try
                 {
-                    GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
                     var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anyEp);
                     var data = buffer[..result.ReceivedBytes].ToArray();
                     var remote = (IPEndPoint)result.RemoteEndPoint;
-                    GC.EndNoGCRegion();
 
                     ServerMetrics.PacketsReceived.Add(1);
                     // NEW: Handle synchronously - we're already on ThreadPool, no need for Task
@@ -163,7 +165,7 @@ namespace OVS.Rollback.Core
         private void HandleMessage(byte[] buffer, int length, IPEndPoint remote)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
 
             try
             {
@@ -209,7 +211,7 @@ namespace OVS.Rollback.Core
                         "firstByte=0x{FirstByte:X2}",
                         decompressed.Length, remote,
                         decompressed.Length > 0 ? decompressed[0] : 0);
-                    GC.EndNoGCRegion();
+
                     return;
                 }
 
@@ -239,13 +241,13 @@ namespace OVS.Rollback.Core
 
                 if (player is null || match is null)
                 {
-                    GC.EndNoGCRegion();
+
                     return;
                 }
 
                 if (header.Sequence <= player.LastSeqRecv)
                 {
-                    GC.EndNoGCRegion();
+
                     return;
                 }
                 player.LastSeqRecv = header.Sequence;
@@ -280,7 +282,7 @@ namespace OVS.Rollback.Core
                 Log.HandleError(_logger, ex);
             }
 
-            GC.EndNoGCRegion();
+
         }
 
         // ═══════════════════════════════════════════
@@ -290,9 +292,6 @@ namespace OVS.Rollback.Core
         private PlayerInfo? HandleNewConnection(
             NewConnectionPayload payload, IPEndPoint remote)
         {
-            var serverConfig = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: serverConfig.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
-
             string key = $"{remote.Address}:{remote.Port}";
             var matchData = payload.MatchData;
 
@@ -309,7 +308,7 @@ namespace OVS.Rollback.Core
                     if (config is null)
                     {
                         Log.FetchConfigFailed(_logger, matchData.MatchId, new InvalidDataException("Match config is null."));
-                        GC.EndNoGCRegion();
+
                         return null;
                     }
 
@@ -336,7 +335,7 @@ namespace OVS.Rollback.Core
 
             if (_players.TryGetValue(key, out var existing))
             {
-                GC.EndNoGCRegion();
+
                 return existing;
             }
 
@@ -373,7 +372,7 @@ namespace OVS.Rollback.Core
                 StartPingPhase(match);
             }
 
-            GC.EndNoGCRegion();
+
             return newPlayer;
         }
 
@@ -384,14 +383,13 @@ namespace OVS.Rollback.Core
         private void StartPingPhase(MatchState match)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
 
             Log.PingPhaseStarted(_logger, match.MatchId);
 
             uint count = 0;
             System.Threading.Timer? timer = null;
-            timer = new System.Threading.Timer(_ =>
-            {
+            timer = new System.Threading.Timer(_ => {
                 if (count >= config.PingPhase.TotalPings || !_running)
                 {
                     timer?.Dispose();
@@ -405,7 +403,7 @@ namespace OVS.Rollback.Core
 
             // Store timer to prevent GC
             match.PingPhaseTimer = timer;
-            GC.EndNoGCRegion();
+
         }
 
         private void BroadcastRequestQuality(MatchState match)
@@ -451,7 +449,7 @@ namespace OVS.Rollback.Core
         )
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
             lock (player.Lock)
             {
                 for (int i = 0; i < payload.AckFrame.Count && i < player.AckedFrames.Count; i++)
@@ -485,7 +483,7 @@ namespace OVS.Rollback.Core
                 }
             }
 
-            GC.EndNoGCRegion();
+
         }
 
         private void HandleReady(MatchState match, PlayerInfo player, bool isReady)
@@ -517,7 +515,7 @@ namespace OVS.Rollback.Core
         private void HandleClientInput(MatchState match, PlayerInfo player, InputPayload payload)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
 
             lock (player.Lock)
             {
@@ -533,23 +531,23 @@ namespace OVS.Rollback.Core
                 uint f = payload.StartFrame + i;
                 histMap.TryAdd(f, payload.InputPerFrame[i]);
             }
-            GC.EndNoGCRegion();
+
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
 
             if (serverFrame % config.RiftCalculation.RiftUpdateInterval != 0 && serverFrame > config.RiftCalculation.RiftUpdateThreshold)
             {
-                GC.EndNoGCRegion();
+
                 return;
             }
             if (!player.HasNewPing || !player.HasNewFrame)
             {
-                GC.EndNoGCRegion();
+
                 return;
             }
 
@@ -567,7 +565,7 @@ namespace OVS.Rollback.Core
                 player.Rift = rawRift;
                 player.HasNewPing = false;
                 player.HasNewFrame = false;
-                GC.EndNoGCRegion();
+
                 return;
             }
 
@@ -624,7 +622,7 @@ namespace OVS.Rollback.Core
             ServerMetrics.RiftValue.Record(player.SmoothRift);
             ServerMetrics.RiftError.Record(riftError);
             ServerMetrics.PingValue.Record(player.SmoothedPing);
-            
+
             // Track when we're making significant corrections
             if (MathF.Abs(riftError) > 1.0f)
                 ServerMetrics.RiftCorrections.Add(1);
@@ -635,7 +633,7 @@ namespace OVS.Rollback.Core
                     player.MatchId, player.PlayerIndex, player.Ping, player.SmoothRift,
                     player.Rift, predictedClientFrame, serverFrame);
             }
-            GC.EndNoGCRegion();
+
         }
 
         // ═══════════════════════════════════════════
@@ -657,7 +655,7 @@ namespace OVS.Rollback.Core
         private void RunTickLoop(MatchState match)
         {
             var config = ServerConfiguration.Instance;
-            
+
             long targetIntervalTicks =
                 (long)(match.TickIntervalMs / 1000.0 * Stopwatch.Frequency);
             long startTime = Stopwatch.GetTimestamp();
@@ -669,14 +667,14 @@ namespace OVS.Rollback.Core
             if (config.Performance.UseAdaptiveSpinThreshold)
             {
                 // Adaptive: reduce spin time when CPU is constrained
-                spinThreshold = Environment.ProcessorCount <= 2 
+                spinThreshold = Environment.ProcessorCount <= 2
                     ? Stopwatch.Frequency / 2000   // 500μs for 2-core systems
                     : Stopwatch.Frequency / 500;    // 2ms for systems with spare cores
             }
             else
             {
                 // Fixed threshold from config (microseconds → ticks)
-                spinThreshold = (long)(config.Performance.SpinThresholdMicroseconds * 
+                spinThreshold = (long)(config.Performance.SpinThresholdMicroseconds *
                     Stopwatch.Frequency / 1_000_000.0);
             }
 
@@ -686,10 +684,45 @@ namespace OVS.Rollback.Core
             while (match.IsTickRunning && _running)
             {
                 // ── Tick (fully synchronous — zero async overhead) ──
-                GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
+                bool noGCActive = false;
+                try
+                {
+                    // Try to enter NoGCRegion for this single tick
+                    noGCActive = GC.TryStartNoGCRegion(
+                        config.Performance.GarbageCollectionFreeRAMThreshold,
+                        disallowFullBlockingGC: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Already in NoGCRegion from previous iteration - this is fine
+                    noGCActive = false;
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // User provided invalid threshold, but don't de because of it - log once and continue without NoGCRegion
+                    _logger.LogWarning(
+                        "Invalid NoGCRegion threshold configured: {Threshold} bytes. " +
+                        "NoGCRegion will be disabled. Please appsettings.json and ensure " +
+                        "the threshold is less than the total available memory on the server, and " +
+                        "that the value provided is a positive integer measured in Megabytes (e.g. 512 for ~512MB).",
+                        config.Performance.GarbageCollectionFreeRAMThreshold);
+                    noGCActive = false;
+                }
+
                 long tickStart = Stopwatch.GetTimestamp();
                 Tick(match);
-                GC.EndNoGCRegion();
+
+                if (noGCActive && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
+                {
+                    try
+                    {
+                        GC.EndNoGCRegion();
+                    }
+                    catch
+                    {
+                    }
+                }
 
                 // Sample histogram based on config
                 if (match.CurrentFrame % config.Performance.MetricsSamplingInterval == 0)
@@ -722,7 +755,7 @@ namespace OVS.Rollback.Core
                 }
 
                 // ── Wall-clock frame counter (UNCHANGED — identical to known-good) ──
-                GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
                 long now = Stopwatch.GetTimestamp();
                 long elapsed = now - startTime;
                 match.CurrentFrame = (uint)(elapsed / targetIntervalTicks);
@@ -742,15 +775,15 @@ namespace OVS.Rollback.Core
                     accumulatedError += waitTicks;
                     nextTickTime = now;
                     long maxError = targetIntervalTicks * 3;
+
                     if (accumulatedError < -maxError)
                     {
                         accumulatedError = -maxError;
                     }
-                    GC.EndNoGCRegion();
+
                     continue;
                 }
 
-                GC.EndNoGCRegion();
                 // ── Optimized hybrid sleep/yield/spin wait ──
                 long remaining = nextTickTime - Stopwatch.GetTimestamp();
                 if (remaining > spinThreshold)
@@ -760,13 +793,13 @@ namespace OVS.Rollback.Core
                     if (sleepMs > 0)
                         Thread.Sleep(sleepMs);
                 }
-                
+
                 // NEW: Yield to other threads instead of pure spinning
                 // This saves ~8% CPU while adding only ~30μs jitter
                 while (Stopwatch.GetTimestamp() < nextTickTime)
                 {
                     long remainingTicks = nextTickTime - Stopwatch.GetTimestamp();
-                    
+
                     // Only spin for final 50μs (was ~2000μs)
                     if (remainingTicks < Stopwatch.Frequency / 20000)  // 50μs
                         Thread.SpinWait(10);  // Reduced from 20 iterations
@@ -781,7 +814,7 @@ namespace OVS.Rollback.Core
 
                 // ── Perf reporting ──
                 perfCount++;
-                if (config.Logging.LogTickPerformance && 
+                if (config.Logging.LogTickPerformance &&
                     perfCount >= config.Logging.TickPerformanceInterval)
                 {
                     double avgUs = Stopwatch.GetElapsedTime(perfStart).TotalMicroseconds / perfCount;
@@ -801,7 +834,7 @@ namespace OVS.Rollback.Core
         {
             var ws = match.Workspace!;
             var gameConfig = ServerConfiguration.Instance.GameLogic;
-            
+
             // FIX #4: Add lock when snapshotting players (prevents race conditions)
             lock (match.Lock)
             {
@@ -945,10 +978,10 @@ namespace OVS.Rollback.Core
             // ── Input cleanup every N frames (no LINQ, no sort) ──
             if (match.CurrentFrame % gameConfig.InputCleanupInterval == 0)
             {
-                uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames 
-                    ? match.CurrentFrame - gameConfig.InputHistoryFrames 
+                uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames
+                    ? match.CurrentFrame - gameConfig.InputHistoryFrames
                     : 0;
-                    
+
                 for (int i = 0; i < match.Inputs.Count; i++)
                 {
                     var histMap = match.Inputs[i];
@@ -976,10 +1009,10 @@ namespace OVS.Rollback.Core
         private void SendPlayerInput(MatchState match, PlayerInfo player, TickWorkspace ws, uint sequence)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
             if (player.Disconnected) return;
 
-            var header = new ServerHeader { 
+            var header = new ServerHeader {
                 Type = ServerMessageType.PlayerInput,
                 Sequence = sequence  // Use pre-allocated sequence (no lock needed)
             };
@@ -1012,7 +1045,7 @@ namespace OVS.Rollback.Core
 
             player.LastSentTimestamp = ts;
             player.PendingPings[sequence] = ts;
-            GC.EndNoGCRegion();
+
         }
 
         /// <summary>
@@ -1023,7 +1056,7 @@ namespace OVS.Rollback.Core
             MatchState match, PlayerInfo player, ServerMessageType type, object? payload)
         {
             var config = ServerConfiguration.Instance;
-            GC.TryStartNoGCRegion(totalSize: config.Performance.GarbageCollectionFreeRAMThreshold, disallowFullBlockingGC: true);
+
             if (player.Disconnected) return 0;
 
             var header = new ServerHeader { Type = type };
@@ -1059,7 +1092,7 @@ namespace OVS.Rollback.Core
                 }
             }
 
-            GC.EndNoGCRegion();
+
             return header.Sequence;
         }
 
