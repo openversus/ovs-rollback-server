@@ -134,6 +134,7 @@ namespace OVS.Rollback.Configuration
             Performance.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", Performance.UseAdaptiveSpinThreshold);
             Performance.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", Performance.MetricsSamplingInterval);
             Performance.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", Performance.TargetFrameRate);
+            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", Performance.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
 
             // Networking settings
             Networking.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", Networking.ReceiveBufferSize);
@@ -227,6 +228,7 @@ namespace OVS.Rollback.Configuration
         public bool UseAdaptiveSpinThreshold { get; set; } = true;
         public int MetricsSamplingInterval { get; set; } = 10;
         public int TargetFrameRate { get; set; } = 60;
+        public int GarbageCollectionFreeRAMThreshold { get; set; } = 16 * 1024 * 1024;
     }
 
     public class NetworkingSettings
@@ -240,20 +242,20 @@ namespace OVS.Rollback.Configuration
 
     public class GameLogicSettings
     {
-        public int DisconnectTimeoutSeconds { get; set; } = 30;
+        public int DisconnectTimeoutSeconds { get; set; } = 45;
         public byte MaxInputsPerFrame { get; set; } = 30;
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
-        public int MinimumInputFrames { get; set; } = 10;
+        public int MinimumInputFrames { get; set; } = 5;
     }
 
     public class RiftCalculationSettings
     {
-        public float PingAlpha { get; set; } = 0.1f;
-        public float RiftAlpha { get; set; } = 0.05f;
+        public float PingAlpha { get; set; } = 0.15f;
+        public float RiftAlpha { get; set; } = 0.08f;
         public float MaxRiftDeviation { get; set; } = 20.0f;
         public float TargetRift { get; set; } = 0.5f;
-        public uint RiftUpdateInterval { get; set; } = 60;
+        public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
     }
