@@ -271,7 +271,7 @@ namespace OVS.Rollback.Core
         // ═══════════════════════════════════════════
 
         private PlayerInfo? HandleNewConnection(
-            NewConnectionPayload payload, IPEndPoint remote, bool debug = false)
+            NewConnectionPayload payload, IPEndPoint remote)
         {
             string key = $"{remote.Address}:{remote.Port}";
             var matchData = payload.MatchData;
@@ -302,10 +302,6 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
-                        //Inputs = Enumerable.Range(0, config.MaxPlayers)
-                        //    .Select(_ =>
-                        //    new ConcurrentDictionary<uint, uint>())
-                        //    .ToList(),
                         Inputs = new(config.MaxPlayers),
                         Workspace = new TickWorkspace(config.MaxPlayers)
                     };
@@ -328,12 +324,10 @@ namespace OVS.Rollback.Core
                 LastSeqSent = 0,
                 AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
                 Ping = 0,
-                //Ready = debug,
                 Ready = false,
                 LastClientFrame = 0,
                 LastInputTimestamp = Stopwatch.GetTimestamp(),
-                Rift = 0,
-                Emulated = debug
+                Rift = 0
             };
 
             match.Players[key] = newPlayer;
@@ -424,7 +418,8 @@ namespace OVS.Rollback.Core
         //  Input & Acknowledgement Handlers (unchanged logic)
         // ═══════════════════════════════════════════
 
-        private void HandlePlayerInputAck(MatchState match, PlayerInfo player, PlayerInputAckPayload payload)
+        private void HandlePlayerInputAck(MatchState match, PlayerInfo player, PlayerInputAckPayload payload
+        )
         {
             lock (player.Lock)
             {
@@ -511,17 +506,50 @@ namespace OVS.Rollback.Core
             float halfPingFrames = (player.SmoothedPing * 0.5f) / TargetFrameTime;
             float predictedClientFrame = player.LastClientFrame + halfPingFrames;
 
+            // Raw rift: how far ahead client is RIGHT NOW
+            float rawRift = predictedClientFrame - serverFrame;
+
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
-                player.SmoothRift = predictedClientFrame - serverFrame;
+                // NEW: Initialize with bias toward target rift
+                player.SmoothRift = rawRift - config.TargetRift;
+                player.Rift = rawRift;
+                player.HasNewPing = false;
+                player.HasNewFrame = false;
+                return;
+            }
+
+            player.Rift = rawRift;
+
+            // NEW: Calculate error from TARGET rift (not zero)
+            // Positive error = client too far ahead, negative = client behind
+            float riftError = rawRift - config.TargetRift;
+
+            if (config.UseAggressiveCorrection)
+            {
+                // Aggressive mode: snap quickly to reduce perceived delay
+                if (MathF.Abs(riftError) < 0.2f)
+                {
+                    // Very close to target - hold steady
+                    player.SmoothRift = riftError;
+                }
+                else if (MathF.Abs(riftError) < MathF.Abs(player.SmoothRift))
+                {
+                    // Converging - snap immediately
+                    player.SmoothRift = riftError;
+                }
+                else
+                {
+                    // Diverging - use higher smoothing factor for faster response
+                    float aggressiveAlpha = MathF.Min(RiftAlpha * 2.0f, 0.3f);
+                    player.SmoothRift = aggressiveAlpha * riftError + (1f - aggressiveAlpha) * player.SmoothRift;
+                }
             }
             else
             {
-                float rawRift = predictedClientFrame - serverFrame;
-                player.Rift = rawRift;
-
-                if (MathF.Abs(rawRift) < 1f)
+                // Conservative mode (original behavior)
+                if (MathF.Abs(riftError) < 0.5f)
                 {
                     player.SmoothRift *= 0.5f;
                     if (MathF.Abs(player.SmoothRift) < 0.01f)
@@ -529,12 +557,11 @@ namespace OVS.Rollback.Core
                 }
                 else
                 {
-                    player.SmoothRift =
-                        RiftAlpha * rawRift + (1f - RiftAlpha) * player.SmoothRift;
+                    player.SmoothRift = RiftAlpha * riftError + (1f - RiftAlpha) * player.SmoothRift;
                 }
 
-                if (MathF.Abs(rawRift) < MathF.Abs(player.SmoothRift))
-                    player.SmoothRift = rawRift;
+                if (MathF.Abs(riftError) < MathF.Abs(player.SmoothRift))
+                    player.SmoothRift = riftError;
             }
 
             player.SmoothRift = PlayerInfo.ClampFloat(player.SmoothRift, config.MaxRiftDeviation);
@@ -544,7 +571,12 @@ namespace OVS.Rollback.Core
 
             // Metrics — read-only, after all state mutations
             ServerMetrics.RiftValue.Record(player.SmoothRift);
+            ServerMetrics.RiftError.Record(riftError);
             ServerMetrics.PingValue.Record(player.SmoothedPing);
+            
+            // Track when we're making significant corrections
+            if (MathF.Abs(riftError) > 1.0f)
+                ServerMetrics.RiftCorrections.Add(1);
 
             if (player.SmoothRift > 1 || player.SmoothRift < -1 || player.SmoothedPing > 254)
             {
@@ -708,6 +740,8 @@ namespace OVS.Rollback.Core
         private void Tick(MatchState match)
         {
             var ws = match.Workspace!;
+            var gameConfig = ServerConfiguration.Instance.GameLogic;
+            
             // FIX #4: Add lock when snapshotting players (prevents race conditions)
             lock (match.Lock)
             {
@@ -740,7 +774,7 @@ namespace OVS.Rollback.Core
             bool needMore = false;
             for (int i = 0; i < match.Inputs.Count; i++)
             {
-                if (match.Inputs[i].Count < 10) { needMore = true; break; }
+                if (match.Inputs[i].Count < gameConfig.MinimumInputFrames) { needMore = true; break; }
             }
             if (needMore)
             {
@@ -849,7 +883,6 @@ namespace OVS.Rollback.Core
             }
 
             // ── Input cleanup every N frames (no LINQ, no sort) ──
-            var gameConfig = ServerConfiguration.Instance.GameLogic;
             if (match.CurrentFrame % gameConfig.InputCleanupInterval == 0)
             {
                 uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames 

@@ -153,8 +153,10 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", RiftCalculation.PingAlpha);
             RiftCalculation.RiftAlpha = GetEnvFloat("RiftCalculation__RiftAlpha", RiftCalculation.RiftAlpha);
             RiftCalculation.MaxRiftDeviation = GetEnvFloat("RiftCalculation__MaxRiftDeviation", RiftCalculation.MaxRiftDeviation);
+            RiftCalculation.TargetRift = GetEnvFloat("RiftCalculation__TargetRift", RiftCalculation.TargetRift);
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
+            RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -249,8 +251,10 @@ namespace OVS.Rollback.Configuration
         public float PingAlpha { get; set; } = 0.1f;
         public float RiftAlpha { get; set; } = 0.05f;
         public float MaxRiftDeviation { get; set; } = 20.0f;
+        public float TargetRift { get; set; } = 0.5f;
         public uint RiftUpdateInterval { get; set; } = 60;
         public uint RiftUpdateThreshold { get; set; } = 500;
+        public bool UseAggressiveCorrection { get; set; } = true;
     }
 
     public class PingPhaseSettings

@@ -30,6 +30,10 @@ namespace OVS.Rollback.Utils
             s_meter.CreateHistogram<double>("rollback.rift.value");
         public static readonly Histogram<double> PingValue =
             s_meter.CreateHistogram<double>("rollback.ping.ms", "ms");
+        public static readonly Histogram<double> RiftError =
+            s_meter.CreateHistogram<double>("rollback.rift.error");
+        public static readonly Counter<long> RiftCorrections =
+            s_meter.CreateCounter<long>("rollback.rift.corrections");
 
         // ── Network ──
         public static readonly Counter<long> PacketsSent =

@@ -1,9 +1,9 @@
 services:
   ovs-rollback-server-csharp-rework1: &ovs-rollback-server-csharp-rework1
     image: ovs-rollback-server-csharp-rework:latest
-      build:
-        context: .
-        dockerfile: Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
     deploy:
       resources:
         limits:
