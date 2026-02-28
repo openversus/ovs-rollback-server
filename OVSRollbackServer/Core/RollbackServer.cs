@@ -86,13 +86,12 @@ namespace OVS.Rollback.Core
             if (_running) return;
             _running = true;
 
-            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
-
-            // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
+            
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
-            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
             SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
+            // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
+            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
             _udpTask = Task.Run(RunUdpServerAsync);
 
             string serverType = IsOVS ? "OVS" : (IsMVSI ? "MVSI" : "Unknown");
