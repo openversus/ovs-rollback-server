@@ -22,12 +22,28 @@ FROM build AS publish
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
+USER root
+RUN apt update -y \
+ && apt install wget -y \
+ && wget 'https://aka.ms/dotnet-counters/linux-x64' -O /usr/sbin/dotnet-counters \
+ && chmod ug+x /usr/sbin/dotnet-counters \
+ && rm -rf /var/lib/apt/lists/*
+
 # This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
+
+USER root
+RUN apt update -y \
+ && apt upgrade -y \
+ && apt install vim wget net-tools -y \
+ && rm -rf /var/lib/apt/lists/*
+USER $APP_UID
+
 WORKDIR /app
 COPY --from=publish /app/publish .
+COPY --from=publish /usr/sbin/dotnet-counters /usr/sbin/
 COPY ./OVSRollbackServer/appsettings.json /app/appsettings.json
 
 ARG OVS_SERVER=http://testing.openversus.org:8000
 ENV OVS_SERVER=${OVS_SERVER}
-ENTRYPOINT ["dotnet", "OVSRollbackServer.dll"]
+ENTRYPOINT ["dotnet", "OVS.Rollback.Server.dll"]
