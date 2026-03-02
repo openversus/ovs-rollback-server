@@ -286,6 +286,16 @@ namespace rollback
 				handleClientInput(match, player, payload);
 				break;
 			}
+			case ClientMessageType::MatchResult:
+			{
+				auto payload = std::get<MatchResultPayload>(clientMsg->payload);
+				// Store the winning team index on the match (first reporter wins)
+				int expected = -1;
+				match->winningTeamIndex.compare_exchange_strong(expected, static_cast<int>(payload.winningTeamIndex));
+				std::cout << logPrefix << "Player index " << player->playerIndex
+					<< " reported match result: winningTeamIndex=" << static_cast<int>(payload.winningTeamIndex) << std::endl;
+				break;
+			}
 			case ClientMessageType::Disconnecting:
 			{
 				// Mark player as disconnected
@@ -760,7 +770,7 @@ namespace rollback
 			}
 			if (allDisconnected)
 			{
-				sendEndMatch(match->matchId, match->key);
+				sendEndMatch(match->matchId, match->key, match->winningTeamIndex.load());
 				match->tickRunning = false;
 				// Remove all players from global players_ map
 				for (const auto& key : playerKeys)
@@ -1177,7 +1187,7 @@ namespace rollback
 		return config;
 	}
 
-	void RollbackServer::sendEndMatch(const std::string& matchId, const std::string& key)
+	void RollbackServer::sendEndMatch(const std::string& matchId, const std::string& key, int winningTeam)
 	{
 		std::string path = this->isOVS ? this->Endpoints.OVS.EndMatchPath : this->Endpoints.MVSI.EndMatchPath;
 		std::string url = this->baseURL + path;
@@ -1186,7 +1196,11 @@ namespace rollback
 		req_json["matchId"] = matchId;
 		req_json["key"] = key;
 		req_json["hostname"] = util::hostname;
+		if (winningTeam >= 0) {
+			req_json["winningTeam"] = winningTeam;
+		}
 		std::string req_body = req_json.dump();
+		std::cout << logPrefix << "Sending end match for " << matchId << " with winningTeam=" << winningTeam << std::endl;
 
 		CURL* curl = curl_easy_init();
 		if (!curl) {
