@@ -434,7 +434,8 @@ namespace OVS.Rollback.Core
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
-                if (player.IsSpectator || player.Disconnected)
+                //if (player.IsSpectator || player.Disconnected)
+                if (player.Disconnected)
                 {
                     continue;
                 }
