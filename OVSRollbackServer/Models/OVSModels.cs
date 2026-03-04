@@ -19,7 +19,7 @@ namespace OVS.Rollback.Models
     public class OVSMatchConfig
     {
         [JsonPropertyName("max_players")]
-        public int MaxPlayers { get; set; } = 2;
+        public int MaxPlayers { get; set; } = 6;
 
         [JsonPropertyName("match_duration")]
         public uint MatchDuration { get; set; } = 36000;

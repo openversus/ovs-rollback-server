@@ -570,6 +570,31 @@ namespace OVS.Rollback.Core
 
             player.Rift = rawRift;
 
+            bool noGCActive = false;
+            try
+            {
+                // Try to enter NoGCRegion for this single tick
+                noGCActive = GC.TryStartNoGCRegion(
+                    config.Performance.GarbageCollectionFreeRAMThreshold,
+                    disallowFullBlockingGC: true);
+            }
+            catch (InvalidOperationException)
+            {
+                // Already in NoGCRegion from previous iteration - this is fine
+                noGCActive = false;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // User provided invalid threshold, but don't de because of it - log once and continue without NoGCRegion
+                _logger.LogWarning(
+                    "Invalid NoGCRegion threshold configured: {Threshold} bytes. " +
+                    "NoGCRegion will be disabled. Please appsettings.json and ensure " +
+                    "the threshold is less than the total available memory on the server, and " +
+                    "that the value provided is a positive integer measured in Megabytes (e.g. 512 for ~512MB).",
+                    config.Performance.GarbageCollectionFreeRAMThreshold);
+                noGCActive = false;
+            }
+
             // NEW: Calculate error from TARGET rift (not zero)
             // Positive error = client too far ahead, negative = client behind
             float riftError = rawRift - config.RiftCalculation.TargetRift;
@@ -633,6 +658,17 @@ namespace OVS.Rollback.Core
                     player.Rift, predictedClientFrame, serverFrame);
             }
 
+            if (noGCActive && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
+            {
+                try
+                {
+                    GC.EndNoGCRegion();
+                }
+                catch
+                {
+                }
+            }
+
         }
 
         // ═══════════════════════════════════════════
@@ -684,44 +720,8 @@ namespace OVS.Rollback.Core
             {
                 // ── Tick (fully synchronous — zero async overhead) ──
 
-                bool noGCActive = false;
-                try
-                {
-                    // Try to enter NoGCRegion for this single tick
-                    noGCActive = GC.TryStartNoGCRegion(
-                        config.Performance.GarbageCollectionFreeRAMThreshold,
-                        disallowFullBlockingGC: true);
-                }
-                catch (InvalidOperationException)
-                {
-                    // Already in NoGCRegion from previous iteration - this is fine
-                    noGCActive = false;
-                }
-                catch (ArgumentOutOfRangeException)
-                {
-                    // User provided invalid threshold, but don't de because of it - log once and continue without NoGCRegion
-                    _logger.LogWarning(
-                        "Invalid NoGCRegion threshold configured: {Threshold} bytes. " +
-                        "NoGCRegion will be disabled. Please appsettings.json and ensure " +
-                        "the threshold is less than the total available memory on the server, and " +
-                        "that the value provided is a positive integer measured in Megabytes (e.g. 512 for ~512MB).",
-                        config.Performance.GarbageCollectionFreeRAMThreshold);
-                    noGCActive = false;
-                }
-
                 long tickStart = Stopwatch.GetTimestamp();
                 Tick(match);
-
-                if (noGCActive && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
-                {
-                    try
-                    {
-                        GC.EndNoGCRegion();
-                    }
-                    catch
-                    {
-                    }
-                }
 
                 // Sample histogram based on config
                 if (match.CurrentFrame % config.Performance.MetricsSamplingInterval == 0)

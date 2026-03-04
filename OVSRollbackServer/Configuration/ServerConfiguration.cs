@@ -73,6 +73,8 @@ namespace OVS.Rollback.Configuration
                 var newConfig = Load();
                 _instance = newConfig;
                 _logger?.LogInformation("Configuration reloaded successfully");
+
+                _logger?.LogInformation("New configuration: {@Config}", newConfig);
             }
         }
 
@@ -217,7 +219,7 @@ namespace OVS.Rollback.Configuration
     public class ServerSettings
     {
         public ushort Port { get; set; } = 8080;
-        public int MaxPlayers { get; set; } = 4;
+        public int MaxPlayers { get; set; } = 6;
         public string BaseUrl { get; set; } = "";
         public string HostName { get; set; } = "";
     }
@@ -228,7 +230,7 @@ namespace OVS.Rollback.Configuration
         public bool UseAdaptiveSpinThreshold { get; set; } = true;
         public int MetricsSamplingInterval { get; set; } = 10;
         public int TargetFrameRate { get; set; } = 60;
-        public int GarbageCollectionFreeRAMThreshold { get; set; } = 16 * 1024 * 1024;
+        public int GarbageCollectionFreeRAMThreshold { get; set; } = 1024 * 1024 * 1024;
     }
 
     public class NetworkingSettings

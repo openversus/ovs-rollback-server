@@ -83,7 +83,7 @@ namespace OVS.Rollback
                         .AddMeter(defaultMeterName)
                         .Build();
 
-                    logEntry.AppendLine($" - use dotnet-counters monitor -p {Environment.ProcessId} --counters \"{defaultMeterName}\"");
+                    logEntry.AppendLine($" - to view, use: dotnet-counters monitor -p {Environment.ProcessId} --counters \"{defaultMeterName}\"");
                 }
 
                 logger.LogInformation(logEntry.ToString());
