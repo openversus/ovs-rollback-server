@@ -14,6 +14,7 @@ namespace OVS.Rollback.Models
         public IPEndPoint EndPoint { get; set; } = null!;
         public string MatchId { get; set; } = "";
         public ushort PlayerIndex { get; set; }
+        public bool IsSpectator { get; set; } = false;
 
         // ── Sequence tracking ──
         public uint LastSeqRecv { get; set; }

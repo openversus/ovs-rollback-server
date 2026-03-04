@@ -342,6 +342,7 @@ namespace OVS.Rollback.Core
                 EndPoint = remote,
                 MatchId = matchData.MatchId,
                 PlayerIndex = payload.PlayerData.PlayerIndex,
+                IsSpectator = payload.PlayerData.PlayerIndex == 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
                 AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
@@ -366,7 +367,8 @@ namespace OVS.Rollback.Core
             };
             SendServerMessage(match, newPlayer, ServerMessageType.NewConnectionReply, reply);
 
-            if (match.Players.Count == match.MaxPlayers)
+            int spectatorsCount = match.Players.Count - match.Players.Count(p => p.Value.IsSpectator);
+            if (match.Players.Count == match.MaxPlayers - spectatorsCount)
             {
                 StartPingPhase(match);
             }
@@ -487,6 +489,11 @@ namespace OVS.Rollback.Core
 
         private void HandleReady(MatchState match, PlayerInfo player, bool isReady)
         {
+            if (player.IsSpectator)
+            {
+                player.Ready = true; // Spectators are always ready
+            }
+
             player.Ready = isReady;
 
             // ← CHANGED: loop instead of .All() LINQ
@@ -851,7 +858,7 @@ namespace OVS.Rollback.Core
 
                     if (!player.Disconnected &&
                         Stopwatch.GetElapsedTime(player.LastInputTimestamp).TotalSeconds
-                            > DisconnectTimeout)
+                            > DisconnectTimeout && !player.IsSpectator)
                     {
                         player.Disconnected = true;
                         ServerMetrics.PlayersDisconnected.Add(1);

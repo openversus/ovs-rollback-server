@@ -14,6 +14,9 @@ namespace OVS.Rollback.Models
 
         [JsonPropertyName("is_host")]
         public bool IsHost { get; set; }
+
+        [JsonPropertyName("is_spectator")]
+        public bool IsSpectator { get; set; } = false;
     }
 
     public class OVSMatchConfig
@@ -26,5 +29,8 @@ namespace OVS.Rollback.Models
 
         [JsonPropertyName("players")]
         public List<OvsPlayer> Players { get; set; } = [];
+
+        [JsonPropertyName("is_spectator")]
+        public bool IsSpectator { get; set; } = false;
     }
 }
