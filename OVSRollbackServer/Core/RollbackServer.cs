@@ -354,7 +354,7 @@ namespace OVS.Rollback.Core
                 LastSeqSent = 0,
                 AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
                 Ping = 0,
-                Ready = false,
+                Ready = payload.PlayerData.PlayerIndex == 8888 ? true : false,
                 LastClientFrame = 0,
                 LastInputTimestamp = Stopwatch.GetTimestamp(),
                 Rift = 0
@@ -434,7 +434,10 @@ namespace OVS.Rollback.Core
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
-                if (player.Disconnected) continue;
+                if (player.IsSpectator || player.Disconnected)
+                {
+                    continue;
+                }
 
                 var configValues = new List<ushort>(match.MaxPlayers);
                 for (int i = 0; i < match.MaxPlayers; i++)
@@ -862,6 +865,10 @@ namespace OVS.Rollback.Core
             for (int p = 0; p < ws.PlayerCount; p++)
             {
                 var player = ws.PlayerSnapshot[p].Value;
+                if (player.IsSpectator)
+                {
+                    continue; // Spectators don't have rift or disconnect logic
+                }
                 lock (player.Lock)
                 {
                     CalcRiftVariableTick(player, serverFrame);
@@ -926,6 +933,10 @@ namespace OVS.Rollback.Core
                 for (int p = 0; p < ws.PlayerCount; p++)
                 {
                     var peer = ws.PlayerSnapshot[p].Value;
+                    if (peer.IsSpectator)
+                    {
+                        continue; // Spectators don't send inputs
+                    }
                     int idx = peer.PlayerIndex;
                     var inputMap = match.Inputs[idx];
 
