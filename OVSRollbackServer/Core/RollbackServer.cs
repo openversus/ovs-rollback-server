@@ -367,7 +367,7 @@ namespace OVS.Rollback.Core
             };
             SendServerMessage(match, newPlayer, ServerMessageType.NewConnectionReply, reply);
 
-            int spectatorsCount = match.Players.Count - match.Players.Count(p => p.Value.IsSpectator);
+            int spectatorsCount = match.Players.Count - match.Players.Count(p => !p.Value.IsSpectator);
             if (match.Players.Count == match.MaxPlayers - spectatorsCount)
             {
                 StartPingPhase(match);
@@ -489,12 +489,12 @@ namespace OVS.Rollback.Core
 
         private void HandleReady(MatchState match, PlayerInfo player, bool isReady)
         {
+            player.Ready = isReady;
+
             if (player.IsSpectator)
             {
                 player.Ready = true; // Spectators are always ready
             }
-
-            player.Ready = isReady;
 
             // ← CHANGED: loop instead of .All() LINQ
             bool allReady = true;
