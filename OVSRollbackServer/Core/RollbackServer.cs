@@ -297,7 +297,6 @@ namespace OVS.Rollback.Core
             MatchState? match;
             _matchCreationLock.Wait();  // Synchronous wait (was async)
             OVSMatchConfig? config = null;
-            int actualPlayers = 0;
 
             try
             {
@@ -313,10 +312,6 @@ namespace OVS.Rollback.Core
 
                         return null;
                     }
-                    else
-                    {
-                        actualPlayers = config.Players.Count(p => p.PlayerIndex != 8888);
-                    }
 
                     match = new MatchState {
                         MatchId = matchData.MatchId,
@@ -329,12 +324,12 @@ namespace OVS.Rollback.Core
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
                         //Inputs = new(config.MaxPlayers),
-                        Inputs = new(actualPlayers),
+                        Inputs = new(config.ActualPlayers),
                         //Workspace = new TickWorkspace(config.MaxPlayers)
-                        Workspace = new TickWorkspace(actualPlayers)
+                        Workspace = new TickWorkspace(config.ActualPlayers)
                     };
                     //for (int i = 0; i < config.MaxPlayers; i++)
-                    for (int i = 0; i < actualPlayers; i++)
+                    for (int i = 0; i < config.ActualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
                     }
@@ -366,7 +361,6 @@ namespace OVS.Rollback.Core
             };
 
             match.Players[key] = newPlayer;
-            actualPlayers = match.ActualPlayers;
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
             Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, matchData.MatchId);
@@ -380,7 +374,7 @@ namespace OVS.Rollback.Core
             };
             SendServerMessage(match, newPlayer, ServerMessageType.NewConnectionReply, reply);
 
-            if (match.Players.Count == actualPlayers)
+            if (match.ActualPlayers == match.MaxPlayers - match.NumSpectators)
             {
                 StartPingPhase(match);
             }

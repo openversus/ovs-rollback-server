@@ -49,5 +49,6 @@ namespace OVS.Rollback.Models
                 return count;
             }
         }
+        public int ActualPlayers => Players.Count - NumSpectators;
     }
 }
