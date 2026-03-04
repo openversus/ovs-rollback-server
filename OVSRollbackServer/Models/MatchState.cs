@@ -41,6 +41,8 @@ namespace OVS.Rollback.Models
             }
         }
 
+        public int ActualPlayers => Players.Count - NumSpectators;
+
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];
 

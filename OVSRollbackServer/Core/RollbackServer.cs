@@ -328,11 +328,13 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
-                        Inputs = new(config.MaxPlayers),
-                        Workspace = new TickWorkspace(config.MaxPlayers)
+                        //Inputs = new(config.MaxPlayers),
+                        Inputs = new(actualPlayers),
+                        //Workspace = new TickWorkspace(config.MaxPlayers)
+                        Workspace = new TickWorkspace(actualPlayers)
                     };
                     //for (int i = 0; i < config.MaxPlayers; i++)
-                    for (int i = 0; i < (config.MaxPlayers - config.NumSpectators); i++)
+                    for (int i = 0; i < actualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
                     }
@@ -341,6 +343,8 @@ namespace OVS.Rollback.Core
                 }
             }
             finally { _matchCreationLock.Release(); }
+
+            actualPlayers = match.ActualPlayers;
 
             if (_players.TryGetValue(key, out var existing))
             {
