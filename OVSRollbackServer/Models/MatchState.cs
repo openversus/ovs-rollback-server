@@ -21,6 +21,25 @@ namespace OVS.Rollback.Models
         public float TickIntervalMs { get; set; }
         public uint CurrentFrame { get; set; }
         public int MaxPlayers { get; set; }
+        public int NumSpectators
+        {
+            get {
+                if (null == Players || Players.IsEmpty)
+                {
+                    return 0;
+                }
+
+                int count = 0;
+                foreach (var player in Players.Values)
+                {
+                    if (player.IsSpectator)
+                    {
+                        count++;
+                    }
+                }
+                return count;
+            }
+        }
 
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];

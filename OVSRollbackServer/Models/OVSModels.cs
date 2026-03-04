@@ -30,7 +30,24 @@ namespace OVS.Rollback.Models
         [JsonPropertyName("players")]
         public List<OvsPlayer> Players { get; set; } = [];
 
-        [JsonPropertyName("is_spectator")]
-        public bool IsSpectator { get; set; } = false;
+        public int NumSpectators
+        {
+            get {
+                if (null == Players || Players.Count == 0)
+                {
+                    return 0;
+                }
+
+                int count = 0;
+                foreach (var player in Players)
+                {
+                    if (player.IsSpectator)
+                    {
+                        count++;
+                    }
+                }
+                return count;
+            }
+        }
     }
 }
