@@ -344,8 +344,6 @@ namespace OVS.Rollback.Core
             }
             finally { _matchCreationLock.Release(); }
 
-            actualPlayers = match.ActualPlayers;
-
             if (_players.TryGetValue(key, out var existing))
             {
 
@@ -368,6 +366,7 @@ namespace OVS.Rollback.Core
             };
 
             match.Players[key] = newPlayer;
+            actualPlayers = match.ActualPlayers;
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
             Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, matchData.MatchId);
