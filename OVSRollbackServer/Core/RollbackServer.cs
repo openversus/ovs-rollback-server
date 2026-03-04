@@ -325,8 +325,8 @@ namespace OVS.Rollback.Core
                         SequenceCounter = uint.MaxValue,
                         //Inputs = new(config.MaxPlayers),
                         Inputs = new(config.ActualPlayers),
-                        //Workspace = new TickWorkspace(config.MaxPlayers)
-                        Workspace = new TickWorkspace(config.ActualPlayers)
+                        Workspace = new TickWorkspace(config.MaxPlayers)
+                        //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
                     //for (int i = 0; i < config.MaxPlayers; i++)
                     for (int i = 0; i < config.ActualPlayers; i++)
@@ -526,6 +526,10 @@ namespace OVS.Rollback.Core
 
         private void HandleClientInput(MatchState match, PlayerInfo player, InputPayload payload)
         {
+            if (player.IsSpectator)
+            {
+                return; // Spectators don't send inputssf
+            }
             var config = ServerConfiguration.Instance;
 
 
