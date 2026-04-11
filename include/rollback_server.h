@@ -144,6 +144,9 @@ namespace rollback
         std::atomic<bool> tickRunning;         // Signal to start/stop tick thread
         std::condition_variable tickCondition; // CV for tick thread synchronization
         std::mutex tickMutex;                  // Mutex for CV
+
+        // Winner tracking: set when a client sends MatchResult
+        std::atomic<int> winningTeamIndex{-1}; // -1 = not yet determined, 0 or 1 = winning team
     };
 
     class RollbackServer
@@ -238,7 +241,7 @@ namespace rollback
         std::optional<OVSMatchConfig> fetchMatchConfigFromServer(const std::string& matchId, const std::string& key);
 
 
-        void sendEndMatch(const std::string& matchId, const std::string& key);
+        void sendEndMatch(const std::string& matchId, const std::string& key, int winningTeam = -1);
 
         // Server state
         asio::io_context io_context_;
