@@ -9,8 +9,17 @@ namespace OVS.Rollback.Models
         [JsonPropertyName("player_index")]
         public ushort PlayerIndex { get; set; }
 
+        [JsonPropertyName("player_id")]
+        public string PlayerId { get; set; } = String.Empty;
+
+        [JsonPropertyName("player_name")]
+        public string PlayerName { get; set; } = String.Empty;
+
+        [JsonPropertyName("player_character")]
+        public string PlayerCharacter { get; set; } = String.Empty;
+
         [JsonPropertyName("ip")]
-        public string Ip { get; set; } = "";
+        public string Ip { get; set; } = String.Empty;
 
         [JsonPropertyName("is_host")]
         public bool IsHost { get; set; }

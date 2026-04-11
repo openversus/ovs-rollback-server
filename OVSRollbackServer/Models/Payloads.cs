@@ -1,5 +1,10 @@
 // Payloads.cs
+using OVS.Rollback.Interfaces;
+using OVS.Rollback.Models;
 using System;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OVS.Rollback.Models
 {
@@ -31,14 +36,111 @@ namespace OVS.Rollback.Models
 
     public class ClientMatchData
     {
-        public string MatchId { get; set; } = "";
-        public string Key { get; set; } = "";
-        public string EnvironmentId { get; set; } = "";
+        public string MatchId { get; set; } = String.Empty;
+        public string Key { get; set; } = String.Empty;
+        public string EnvironmentId { get; set; } = String.Empty;
     }
 
     public class PlayerStatusData
     {
         public short AveragePing { get; set; }
+    }
+
+    [Serializable]
+    public class MatchStatus : IMatchStatus
+    {
+        private List<string> _playerIdsList = new List<string>();
+        public ITimeObject Timestamp { get; private set; }
+        public string Event { get; set; } = String.Empty;
+        public string Description { get; set; } = String.Empty;
+
+        [JsonPropertyName("matchId")]
+        public string MatchId { get; set; } = String.Empty;
+        public string Key { get; set; } = String.Empty;
+        public int NumPlayers => _playerIdsList.Count;
+        public string PlayerId { get; set; } = String.Empty;
+        public string[] PlayerIds
+        {
+            get {
+                if (_playerIdsList.Count == 1)
+                {
+                    PlayerId = _playerIdsList[0];
+                }
+                return _playerIdsList.ToArray();
+            }
+        }
+
+        public MatchStatus()
+        {
+            Timestamp = new TimeObject();
+        }
+
+        public MatchStatus(string triggeredEvent, string description, string matchId, string key)
+        {
+            Timestamp = new TimeObject();
+            Event = triggeredEvent;
+            Description = description;
+            MatchId = matchId;
+            Key = key;
+        }
+
+        public MatchStatus(string triggeredEvent, string description, string matchId, string key, string playerId)
+        {
+            Timestamp = new TimeObject();
+            Event = triggeredEvent;
+            Description = description;
+            MatchId = matchId;
+            Key = key;
+            _playerIdsList.Add(playerId);
+        }
+
+        public MatchStatus(string triggeredEvent, string description, string matchId, string key, IEnumerable<string> playerIds)
+        {
+            Timestamp = new TimeObject();
+            Event = triggeredEvent;
+            Description = description;
+            MatchId = matchId;
+            Key = key;
+            foreach (string playerId in playerIds)
+            {
+                _playerIdsList.Add(playerId);
+            }
+        }
+
+        public MatchStatus(string triggeredEvent, string description, string matchId, string key, string playerId, IEnumerable<string> playerIds)
+        {
+            Timestamp = new TimeObject();
+            Event = triggeredEvent;
+            Description = description;
+            MatchId = matchId;
+            Key = key;
+            PlayerId = playerId;
+            foreach (string playerId2 in playerIds)
+            {
+                _playerIdsList.Add(playerId2);
+            }
+        }
+
+        public void AddPlayer(string playerId)
+        {
+            _playerIdsList.Add(playerId);
+        }
+
+        public string ToJson()
+        {
+            JsonSerializerOptions options = new() {
+                WriteIndented = true,
+                IncludeFields = true,
+                IndentSize = 4,
+                MaxDepth = 10,
+                NewLine = "\n",
+                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+                PropertyNameCaseInsensitive = true,
+                NumberHandling = JsonNumberHandling.AllowReadingFromString
+            };
+
+            return Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(this, options));
+        }
     }
 
     // ──────────────────────────────────────────────
@@ -122,7 +224,7 @@ namespace OVS.Rollback.Models
         public ushort NumPredictedOverrides { get; set; }
         public ushort NumZeroedOverrides { get; set; }
         public short Ping { get; set; }
-        public short PacketsLossPercent { get; set; }
+        public short PacketLossPercent { get; set; }
         public float Rift { get; set; }
         public uint ChecksumAckFrame { get; set; }
         public List<List<uint>> InputPerFrame { get; set; } = [];
@@ -131,7 +233,7 @@ namespace OVS.Rollback.Models
     public class RequestQualityDataPayload
     {
         public short Ping { get; set; }
-        public short PacketsLossPercent { get; set; }
+        public short PacketLossPercent { get; set; }
     }
 
     public class PlayersStatusPayload
@@ -160,8 +262,8 @@ namespace OVS.Rollback.Models
     public class PlayerDisconnectedPayload
     {
         public byte PlayerIndex { get; set; }
-        public byte ShouldAiTakeControl { get; set; }
-        public uint AiTakeControlFrame { get; set; }
+        public byte ShouldAITakeControl { get; set; }
+        public uint AITakeControlFrame { get; set; }
         public ushort PlayerDisconnectedArrayIndex { get; set; }
     }
 

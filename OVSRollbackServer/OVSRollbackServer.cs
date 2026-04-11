@@ -23,6 +23,11 @@ namespace OVS.Rollback
             // ═══════════════════════════════════════════
             //  Initialize Configuration
             // ═══════════════════════════════════════════
+
+            logger.LogInformation("{LogPrefix} Server is alive, starting heartbeat loop...", LogPrefix);
+            HeartBeat pacemaker = new HeartBeat();
+            _ = pacemaker.StartLoop();
+
             logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
             
             // Allow config file path override from command line
@@ -49,14 +54,14 @@ namespace OVS.Rollback
 
             if (args.Length > 1)
             {
-                if (int.TryParse(args[1], out var mp) && mp is > 0 and <= 4)
+                if (int.TryParse(args[1], out var mp) && mp is > 0 and <= 8)
                 {
                     maxPlayers = mp;
                     logger.LogInformation("{LogPrefix} MaxPlayers overridden by command line: {MaxPlayers}", LogPrefix, maxPlayers);
                 }
                 else
                 {
-                    logger.LogWarning("{LogPrefix} Max players must be between 1 and 4. Using config: {MaxPlayers}", LogPrefix, maxPlayers);
+                    logger.LogWarning("{LogPrefix} Max players must be between 1 and 8. Using config: {MaxPlayers}", LogPrefix, maxPlayers);
                 }
             }
 
@@ -64,10 +69,10 @@ namespace OVS.Rollback
             //  Setup OpenTelemetry Metrics
             // ═══════════════════════════════════════════
             MeterProvider? meterProvider = null;
-            if (config.Logging.EnableMetrics)
+            if (config.Logging.EnableMetrics)   
             {
                 string defaultMeterName = "OVS.Rollback.Server";
-                StringBuilder logEntry = new StringBuilder("{LogPrefix} Metrics enabled");
+                StringBuilder logEntry = new($"{LogPrefix} Metrics enabled");
 
                 if (config.Logging.EnableConsoleMetrics)
                 {
@@ -140,6 +145,7 @@ namespace OVS.Rollback
             {
                 await using var server = new RollbackServer(logger: rollbackLogger, port: port, maxPlayers: maxPlayers);
                 server.Start();
+                Events.OnServerStartHandler(server, new EventArgs());
 
                 logger.LogInformation("{LogPrefix} Server running. Press Ctrl+C to stop.", LogPrefix);
                 if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())

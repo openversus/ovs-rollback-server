@@ -206,7 +206,7 @@ namespace OVS
             BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumPredictedOverrides); o += 2;
             BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumZeroedOverrides); o += 2;
             BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-            BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketsLossPercent); o += 2;
+            BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
             BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), (short)(p.Rift * 100)); o += 2;
             BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.ChecksumAckFrame); o += 4;
 
@@ -283,7 +283,7 @@ namespace OVS
                     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumPredictedOverrides); o += 2;
                     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumZeroedOverrides); o += 2;
                     BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-                    BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketsLossPercent); o += 2;
+                    BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
                     BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), (short)(p.Rift * 100)); o += 2;
                     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.ChecksumAckFrame); o += 4;
 
@@ -301,7 +301,7 @@ namespace OVS
 
                 case RequestQualityDataPayload p:
                     BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-                    BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketsLossPercent); o += 2;
+                    BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
                     break;
 
                 case PlayersStatusPayload p:
@@ -333,8 +333,8 @@ namespace OVS
 
                 case PlayerDisconnectedPayload p:
                     buf[o++] = p.PlayerIndex;
-                    buf[o++] = p.ShouldAiTakeControl;
-                    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.AiTakeControlFrame); o += 4;
+                    buf[o++] = p.ShouldAITakeControl;
+                    BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.AITakeControlFrame); o += 4;
                     BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.PlayerDisconnectedArrayIndex); o += 2;
                     break;
 
@@ -373,8 +373,8 @@ namespace OVS
             w.WriteU16(payload.NumPredictedOverrides);
             w.WriteU16(payload.NumZeroedOverrides);
             w.WriteI16(payload.Ping);
-            // FIX #2: Write PacketsLossPercent as short (2 bytes), not byte
-            w.WriteI16(payload.PacketsLossPercent);
+            // FIX #2: Write PacketLossPercent as short (2 bytes), not byte
+            w.WriteI16(payload.PacketLossPercent);
             // FIX #3: Write Rift as int16 scaled by 100 (matches standard path)
             w.WriteI16((short)(payload.Rift * 100));
             w.WriteU32(payload.ChecksumAckFrame);
@@ -583,7 +583,7 @@ namespace OVS
 //                BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumPredictedOverrides); o += 2;
 //                BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumZeroedOverrides); o += 2;
 //                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-//                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketsLossPercent); o += 2;
+//                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
 //                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), (short)(p.Rift * 100)); o += 2;
 //                BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.ChecksumAckFrame); o += 4;
 
@@ -601,7 +601,7 @@ namespace OVS
 
 //            case RequestQualityDataPayload p:
 //                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-//                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketsLossPercent); o += 2;
+//                BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
 //                break;
 
 //            case PlayersStatusPayload p:
@@ -633,8 +633,8 @@ namespace OVS
 
 //            case PlayerDisconnectedPayload p:
 //                buf[o++] = p.PlayerIndex;
-//                buf[o++] = p.ShouldAiTakeControl;
-//                BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.AiTakeControlFrame); o += 4;
+//                buf[o++] = p.ShouldAITakeControl;
+//                BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.AITakeControlFrame); o += 4;
 //                BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.PlayerDisconnectedArrayIndex); o += 2;
 //                break;
 
