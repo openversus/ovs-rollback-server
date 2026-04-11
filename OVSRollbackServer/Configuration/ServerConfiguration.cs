@@ -130,6 +130,8 @@ namespace OVS.Rollback.Configuration
                             GetEnvString("OVS_SERVER", Server.BaseUrl) ?? 
                             GetEnvString("mvsi_server", Server.BaseUrl) ?? "";
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
+            Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
+            Server.MementoMori = GetEnvBool("Server__MementoMori", Server.MementoMori);
 
             // Performance settings
             Performance.SpinThresholdMicroseconds = GetEnvInt("Performance__SpinThresholdMicroseconds", Performance.SpinThresholdMicroseconds);
@@ -222,6 +224,8 @@ namespace OVS.Rollback.Configuration
         public int MaxPlayers { get; set; } = 6;
         public string BaseUrl { get; set; } = "";
         public string HostName { get; set; } = "";
+        public bool FireMatchEvents { get; set; } = true;
+        public bool MementoMori { get; set; } = true;
     }
 
     public class PerformanceSettings

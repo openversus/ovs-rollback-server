@@ -1,3 +1,4 @@
+using OVS.Rollback.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -6,6 +7,8 @@ namespace OVS.Rollback.Core
 {
     internal class Events
     {
+        private static bool shouldFireEvents = ServerConfiguration.Instance.Server.FireMatchEvents;
+
         protected internal static event EventHandler? OnServerStart;
         protected internal static event EventHandler? OnServerStop;
         protected internal static event EventHandler? OnServerListening;
@@ -25,87 +28,128 @@ namespace OVS.Rollback.Core
         protected internal static event EventHandler? OnTerminatingError;
         protected internal static event EventHandler? OnServerIdle;
 
-        public async static Task SendServerStartEvent(object? sender, StatusEventArgs e)
+        private static void FireEvent(EventHandler? eventHandler, object? sender, EventArgs e)
         {
-            OnServerStart?.Invoke(sender, e);
+            // If event firing is disabled, skip invoking the event handler
+            // This allows us to avoid unnecessary overhead from creating EventArgs and invoking delegates when events are not needed
+            // Configurable via the JSON config file (Server.FireMatchEvents) and Environment variable (Server__FireMatchEvents)
+            if (shouldFireEvents)
+            {
+                eventHandler?.Invoke(sender, e);
+            }
         }
 
-        public async static Task SendServerStopEvent(object? sender, StatusEventArgs e)
+        public static Task SendServerStartEvent(object? sender, StatusEventArgs e)
         {
-            OnServerStop?.Invoke(sender, e);
-        }
-        public async static Task SendServerListeningEvent(object? sender, StatusEventArgs e)
-        {
-            OnServerListening?.Invoke(sender, e);
-        }
-        public async static Task SendHeartBeatEvent(object? sender, StatusEventArgs e)
-        {
-            OnHeartBeat?.Invoke(sender, e);
-        }
-        public async static Task SendConfigReceivedEvent(object? sender, StatusEventArgs e)
-        {
-            OnConfigReceived?.Invoke(sender, e);
-        }
-        public async static Task SendPlayerConnectEvent(object? sender, StatusEventArgs e)
-        {
-            OnPlayerConnect?.Invoke(sender, e);
+            FireEvent(OnServerStart, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendPlayerReadyEvent(object? sender, StatusEventArgs e)
+        public static Task SendServerStopEvent(object? sender, StatusEventArgs e)
         {
-            OnPlayerReady?.Invoke(sender, e);
+            FireEvent(OnServerStop, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendAllPlayersReadyEvent(object? sender, StatusEventArgs e)
+        public static Task SendServerListeningEvent(object? sender, StatusEventArgs e)
         {
-            OnAllPlayersReady?.Invoke(sender, e);
-        }
-        public async static Task SendPlayerDisconnectEvent(object? sender, StatusEventArgs e)
-        {
-            OnPlayerDisconnect?.Invoke(sender, e);
+            FireEvent(OnServerListening, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendAllPlayersDisconnectedEvent(object? sender, StatusEventArgs e)
+        public static Task SendHeartBeatEvent(object? sender, StatusEventArgs e)
         {
-            OnAllPlayesrDisconnected?.Invoke(sender, e);
-        }
-        public async static Task SendRageQuitEvent(object? sender, StatusEventArgs e)
-        {
-            OnRageQuit?.Invoke(sender, e);
-        }
-        public async static Task SendPingPhaseEvent(object? sender, StatusEventArgs e)
-        {
-            OnPingPhase?.Invoke(sender, e);
+            FireEvent(OnHeartBeat, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendTickPerformanceEvent(object? sender, StatusEventArgs e)
+        public static Task SendConfigReceivedEvent(object? sender, StatusEventArgs e)
         {
-            OnTickPerformance?.Invoke(sender, e);
+            FireEvent(OnConfigReceived, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendMatchStartEvent(object? sender, StatusEventArgs e)
+        public static Task SendPlayerConnectEvent(object? sender, StatusEventArgs e)
         {
-            OnMatchStart?.Invoke(sender, e);
+            FireEvent(OnPlayerConnect, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendMatchEndEvent(object? sender, StatusEventArgs e)
+        public static Task SendPlayerReadyEvent(object? sender, StatusEventArgs e)
         {
-            OnMatchEnd?.Invoke(sender, e);
+            FireEvent(OnPlayerReady, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendServerIdleEvent(object? sender, StatusEventArgs e)
+        public static Task SendAllPlayersReadyEvent(object? sender, StatusEventArgs e)
         {
-            OnServerIdle?.Invoke(sender, e);
+            FireEvent(OnAllPlayersReady, sender, e);
+            return Task.CompletedTask;
         }
 
-        public async static Task SendErrorEvent(object? sender, StatusEventArgs e)
+        public static Task SendPlayerDisconnectEvent(object? sender, StatusEventArgs e)
         {
-            OnError?.Invoke(sender, e);
+            FireEvent(OnPlayerDisconnect, sender, e);
+            return Task.CompletedTask;
         }
-        public async static Task SendTerminatingErrorEvent(object? sender, StatusEventArgs e)
+
+        public static Task SendAllPlayersDisconnectedEvent(object? sender, StatusEventArgs e)
         {
-            OnTerminatingError?.Invoke(sender, e);
+            FireEvent(OnAllPlayesrDisconnected, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendRageQuitEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnRageQuit, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendPingPhaseEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnPingPhase, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendTickPerformanceEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnTickPerformance, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendMatchStartEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnMatchStart, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendMatchEndEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnMatchEnd, sender, e);
+            if (Server.MementoMori)
+            {
+                Server.cts.Cancel();
+            }
+            return Task.CompletedTask;
+        }
+
+        public static Task SendServerIdleEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnServerIdle, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendErrorEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnError, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendTerminatingErrorEvent(object? sender, StatusEventArgs e)
+        {
+            FireEvent(OnTerminatingError, sender, e);
             Server.cts.Cancel();
+            return Task.CompletedTask;
         }
 
         protected internal static void OnServerStartHandler(object sender, EventArgs e) => OnServerStart?.Invoke(sender, e);

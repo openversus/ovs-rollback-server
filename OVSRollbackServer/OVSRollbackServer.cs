@@ -16,6 +16,12 @@ namespace OVS.Rollback
     {
         private static readonly ILogger<Server> logger = Utilities.NewLogger<Server>();
         protected internal static CancellationTokenSource cts = new CancellationTokenSource();
+
+        // If true, the server will self-destruct after the first match ends
+        // If you plan to have long-running, non-ephemeral servers, set this to false and ensure you have a proper cleanup strategy in place to stop the server when it's no longer needed
+        // Official OpenVersus servers are auto-provisioned/deprovisioned on-demand per game, so this is a (redundant) safety measure to prevent orphaned servers from running indefinitely
+        // The primary method is a cleanup script scheduled via atd as part of the provisioning process, but this is an extra "just in case" measure
+        protected internal static bool MementoMori = false;
         public static readonly string LogPrefix = Utilities.LogPrefix;
 
         public static async Task<int> Main(string[] args)
@@ -24,16 +30,17 @@ namespace OVS.Rollback
             //  Initialize Configuration
             // ═══════════════════════════════════════════
 
-            logger.LogInformation("{LogPrefix} Server is alive, starting heartbeat loop...", LogPrefix);
-            HeartBeat pacemaker = new HeartBeat();
-            _ = pacemaker.StartLoop();
-
             logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
             
             // Allow config file path override from command line
             string? configPath = args.Length > 0 && args[0].EndsWith(".json") ? args[0] : null;
             ServerConfiguration.Initialize(logger, configPath);
             var config = ServerConfiguration.Instance;
+            MementoMori = config.Server.MementoMori;
+
+            logger.LogInformation("{LogPrefix} Server is alive, starting heartbeat loop...", LogPrefix);
+            HeartBeat pacemaker = new HeartBeat();
+            _ = pacemaker.StartLoop();
 
             // Command-line args override config (for backwards compatibility)
             ushort port = config.Server.Port;

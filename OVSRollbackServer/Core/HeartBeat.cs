@@ -40,6 +40,18 @@ namespace OVS.Rollback.Core
                         )
                     );
 
+                if (Server.MementoMori && _stopwatch.ElapsedMilliseconds >= 510000)
+                {
+                    _ = Events.SendServerIdleEvent(this, StatusEventArgs.CreateNew(
+                            description: "ServerIdle",
+                            matchEvent: "HeartBeat",
+                            matchDescription: $"The server has been alive for over 8.5 minutes. Memento Mori."
+                            )
+                        );
+
+                    await DisposeAsync();
+                }
+
                 await Task.Delay(60000);
             }
 
