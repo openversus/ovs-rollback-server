@@ -15,6 +15,7 @@ namespace OVS.Rollback
     public class Server
     {
         private static readonly ILogger<Server> logger = Utilities.NewLogger<Server>();
+        internal static readonly HTTPHelper HttpHelper = new HTTPHelper(logger);
         protected internal static CancellationTokenSource cts = new CancellationTokenSource();
 
         // If true, the server will self-destruct after the first match ends
@@ -37,6 +38,8 @@ namespace OVS.Rollback
             ServerConfiguration.Initialize(logger, configPath);
             var config = ServerConfiguration.Instance;
             MementoMori = config.Server.MementoMori;
+
+            RegisterMatchEvents();
 
             logger.LogInformation("{LogPrefix} Server is alive, starting heartbeat loop...", LogPrefix);
             HeartBeat pacemaker = new HeartBeat();
@@ -152,7 +155,6 @@ namespace OVS.Rollback
             {
                 await using var server = new RollbackServer(logger: rollbackLogger, port: port, maxPlayers: maxPlayers);
                 server.Start();
-                Events.OnServerStartHandler(server, new EventArgs());
 
                 logger.LogInformation("{LogPrefix} Server running. Press Ctrl+C to stop.", LogPrefix);
                 if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
@@ -185,6 +187,28 @@ namespace OVS.Rollback
             }
 
             return 0;
+        }
+
+        private static void RegisterMatchEvents()
+        {
+            Events.OnServerStart               +=    HttpHelper.SendMatchStatus;
+            Events.OnServerStop                +=    HttpHelper.SendMatchStatus;
+            Events.OnServerListening           +=    HttpHelper.SendMatchStatus;
+            Events.OnHeartBeat                 +=    HttpHelper.SendMatchStatus;
+            Events.OnConfigReceived            +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerConnect             +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerDisconnect          +=    HttpHelper.SendMatchStatus;
+            Events.OnAllPlayesrDisconnected    +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerReady               +=    HttpHelper.SendMatchStatus;
+            Events.OnAllPlayersReady           +=    HttpHelper.SendMatchStatus;
+            Events.OnRageQuit                  +=    HttpHelper.SendMatchStatus;
+            Events.OnPingPhase                 +=    HttpHelper.SendMatchStatus;
+            Events.OnTickPerformance           +=    HttpHelper.SendMatchStatus;
+            Events.OnMatchStart                +=    HttpHelper.SendMatchStatus;
+            Events.OnMatchEnd                  +=    HttpHelper.SendMatchStatus;
+            Events.OnError                     +=    HttpHelper.SendMatchStatus;
+            Events.OnTerminatingError          +=    HttpHelper.SendMatchStatus;
+            Events.OnServerIdle                +=    HttpHelper.SendMatchStatus;
         }
     }
 }

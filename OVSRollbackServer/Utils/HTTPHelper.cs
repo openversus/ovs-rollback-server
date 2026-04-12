@@ -19,11 +19,11 @@ namespace OVS.Rollback.Utils
     internal class HTTPHelper
     {
         private readonly HttpClient _httpClient;
-        private readonly ILogger<HTTPHelper> _logger = Utilities.NewLogger<HTTPHelper>();
+        private readonly ILogger _logger = Utilities.NewLogger<HTTPHelper>();
         private string? _baseURL;
         private static readonly string LogPrefix = Utilities.GetLogPrefix();
 
-        protected internal ILogger<HTTPHelper> Logger { get => _logger; }
+        protected internal ILogger Logger { get => _logger; }
         public string BaseUrl
         {
             get {
@@ -34,40 +34,19 @@ namespace OVS.Rollback.Utils
         public bool IsOVS { get; private set; }
         public bool IsMVSI { get; private set; }
 
-        public string RegisterPath
-        {
-            get {
-                return IsOVS ? Endpoints.OVSRegister : Endpoints.MVSIRegister;
-            }
-        }
+        public string RegisterPath { get => IsOVS ? Endpoints.OVSRegister : Endpoints.MVSIRegister; }
 
-        public string RegisterURL
-        {
-            get {
-                return BaseUrl + RegisterPath;
-            }
-        }
+        public string RegisterURL { get => BaseUrl + RegisterPath; }
 
-        public string EndMatchPath
-        {
-            get {
-                return IsOVS ? Endpoints.OVSEndMatch : Endpoints.MVSIEndMatch;
-            }
-        }
+        public string EndMatchPath { get => IsOVS ? Endpoints.OVSEndMatch : Endpoints.MVSIEndMatch; }
 
-        public string EndMatchURL
-        {
-            get {
-                return BaseUrl + EndMatchPath;
-            }
-        }
+        public string EndMatchURL { get => BaseUrl + EndMatchPath; }
 
-        private ServerConfiguration Config
-        {
-            get {
-                return ServerConfiguration.Instance;
-            }
-        }
+        public string MatchStatusPath { get => Endpoints.OVSMatchStatus; }
+        public string MatchStatusURL { get => BaseUrl + MatchStatusPath; }
+
+        private ServerConfiguration Config { get => ServerConfiguration.Instance; }
+
         public HTTPHelper()
         {
             _httpClient = new HttpClient {
@@ -82,7 +61,7 @@ namespace OVS.Rollback.Utils
             _httpClient = new HttpClient {
                 Timeout = TimeSpan.FromSeconds(Config.Networking.HttpTimeoutSeconds)
             };
-            _logger = (ILogger<HTTPHelper>)logger;
+            _logger = logger;
             Init();
         }
 
@@ -190,6 +169,26 @@ namespace OVS.Rollback.Utils
             catch (Exception ex)
             {
                 Log.EndMatchFailed(_logger, EndMatchURL, ex);
+            }
+        }
+
+        protected internal async Task<MatchStatusResponse?> SendMatchStatus(StatusEventArgs matchStatus)
+        {
+            var payload = matchStatus.StatusObject;
+
+            try
+            {
+                var body = await PostJsonAsync(
+                    url: MatchStatusURL,
+                    data: payload,
+                    returnBody: true);
+
+                return JsonSerializer.Deserialize<MatchStatusResponse>(body);
+            }
+            catch (Exception ex)
+            {
+                Log.SendMatchStatusFailed(_logger, matchStatus.StatusObject.Event, matchStatus.StatusObject.MatchId, ex);
+                return null;
             }
         }
     }

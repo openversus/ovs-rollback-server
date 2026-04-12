@@ -295,4 +295,8 @@ namespace OVS.Rollback.Models
 
         public static readonly string Hostname = Utilities.Hostname;
     }
+
+    [Serializable]
+    public class MatchStatusResponse
+    { }
 }

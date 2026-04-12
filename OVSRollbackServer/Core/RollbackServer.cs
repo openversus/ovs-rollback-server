@@ -38,7 +38,6 @@ namespace OVS.Rollback.Core
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
 
         // ── Lifecycle ──
-        private static Events RollbackEvents = new Events();
         private volatile bool _running;
         private Task? _udpTask;
 

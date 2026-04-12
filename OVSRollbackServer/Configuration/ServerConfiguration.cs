@@ -17,6 +17,7 @@ namespace OVS.Rollback.Configuration
         private static readonly object _lock = new();
         private static ILogger? _logger;
         private static string _configPath = "appsettings.json";
+        public static readonly string LogPrefix = Utilities.LogPrefix;
 
         // Configuration sections
         public ServerSettings Server { get; set; } = new();
@@ -69,12 +70,12 @@ namespace OVS.Rollback.Configuration
         {
             lock (_lock)
             {
-                _logger?.LogInformation("Reloading configuration from {ConfigPath}", _configPath);
+                _logger?.LogInformation("{LogPrefix} Reloading configuration from {ConfigPath}", LogPrefix, _configPath);
                 var newConfig = Load();
                 _instance = newConfig;
-                _logger?.LogInformation("Configuration reloaded successfully");
+                _logger?.LogInformation("{LogPrefix} Configuration reloaded successfully", LogPrefix);
 
-                _logger?.LogInformation("New configuration: {@Config}", newConfig);
+                _logger?.LogInformation("{LogPrefix} New configuration: {@Config}", LogPrefix, newConfig);
             }
         }
 
@@ -98,17 +99,17 @@ namespace OVS.Rollback.Configuration
                         AllowTrailingCommas = true
                     }) ?? new ServerConfiguration();
                     
-                    _logger?.LogInformation("Loaded configuration from {ConfigPath}", _configPath);
+                    _logger?.LogInformation("{LogPrefix} Loaded configuration from {ConfigPath}", LogPrefix, _configPath);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Failed to load configuration from {ConfigPath}, using defaults", _configPath);
+                    _logger?.LogError(ex, "{LogPrefix} Failed to load configuration from {ConfigPath}, using defaults", LogPrefix, _configPath);
                     config = new ServerConfiguration();
                 }
             }
             else
             {
-                _logger?.LogWarning("Configuration file {ConfigPath} not found, using defaults", _configPath);
+                _logger?.LogWarning("{LogPrefix} Configuration file {ConfigPath} not found, using defaults", LogPrefix, _configPath);
                 config = new ServerConfiguration();
             }
 
@@ -187,7 +188,7 @@ namespace OVS.Rollback.Configuration
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
 
-            _logger?.LogDebug("Environment variables applied to configuration");
+            _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
 
         // Helper methods for environment variable parsing
