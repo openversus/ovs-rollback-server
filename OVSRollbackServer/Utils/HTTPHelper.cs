@@ -21,7 +21,7 @@ namespace OVS.Rollback.Utils
         private readonly HttpClient _httpClient;
         private readonly ILogger _logger = Utilities.NewLogger<HTTPHelper>();
         private string? _baseURL;
-        private static readonly string LogPrefix = Utilities.GetLogPrefix();
+        private static readonly string LogPrefix = Utilities.GetLogPrefix<HTTPHelper>();
 
         protected internal ILogger Logger { get => _logger; }
         public string BaseUrl
