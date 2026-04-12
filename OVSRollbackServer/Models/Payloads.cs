@@ -56,6 +56,8 @@ namespace OVS.Rollback.Models
 
         [JsonPropertyName("matchId")]
         public string MatchId { get; set; } = String.Empty;
+
+        [JsonPropertyName("key")]
         public string Key { get; set; } = String.Empty;
         public int NumPlayers => _playerIdsList.Count;
         public string PlayerId { get; set; } = String.Empty;
@@ -280,8 +282,13 @@ namespace OVS.Rollback.Models
     [Serializable]
     public class RegisterPayload
     {
+        [JsonPropertyName("matchId")]
         public string MatchId { get; set; } = String.Empty;
+
+        [JsonPropertyName("key")]
         public string Key { get; set; } = String.Empty;
+
+        [JsonPropertyName("hostname")]
 
         public static readonly string Hostname = Utilities.Hostname;
     }
@@ -290,8 +297,13 @@ namespace OVS.Rollback.Models
     [Serializable]
     public class EndMatchPayload
     {
+        [JsonPropertyName("matchId")]
         public string MatchId { get; set; } = String.Empty;
+
+        [JsonPropertyName("key")]
         public string Key { get; set; } = String.Empty;
+
+        [JsonPropertyName("hostname")]
 
         public static readonly string Hostname = Utilities.Hostname;
     }
