@@ -11,8 +11,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime;
 using System.Runtime.CompilerServices;
-using System.Text;
-using System.Text.Json;
+using static OVS.Rollback.Core.Constants;
+using static OVS.Rollback.Core.LoggerTemplates;
 
 namespace OVS.Rollback.Core
 {
@@ -30,6 +30,7 @@ namespace OVS.Rollback.Core
         private readonly Socket _socket;
         private readonly object _sendLock = new();
         private readonly HttpClient _httpClient;
+        private readonly HTTPHelper _httpHelper;
         private readonly ILogger<RollbackServer> _logger;
 
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
@@ -46,14 +47,6 @@ namespace OVS.Rollback.Core
         public bool IsOVS { get; private set; }
         public bool IsMVSI { get; private set; }
 
-        private static class Endpoints
-        {
-            public const string OVSRegister = "/ovs_register";
-            public const string OVSEndMatch = "/ovs_end_match";
-            public const string MVSIRegister = "/mvsi_register";
-            public const string MVSIEndMatch = "/mvsi_end_match";
-        }
-
         // ═══════════════════════════════════════════
         //  Constructor / Lifecycle
         // ═══════════════════════════════════════════
@@ -64,6 +57,7 @@ namespace OVS.Rollback.Core
             int maxPlayers = Constants.MaxPlayers)
         {
             _logger = logger;
+            _httpHelper = new HTTPHelper(_logger);
             _port = port;
             _maxPlayers = maxPlayers;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -74,7 +68,10 @@ namespace OVS.Rollback.Core
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };
 
-            BaseUrl = GetBaseUrlFromEnv();
+            BaseUrl = Utilities.GetBaseUrlFromEnv(_logger);
+            IsOVS = Utilities.IsOVS;
+            IsMVSI = Utilities.IsMVSI;
+
             if (string.IsNullOrEmpty(BaseUrl))
             {
                 string errorMsg = "No base URL configured. Please set the OVS_SERVER environment variable.";
@@ -345,7 +342,11 @@ namespace OVS.Rollback.Core
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
                     // Synchronous HTTP call - we're on ThreadPool, blocking is OK
-                    config = FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
+
+                    //config = FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
+                    //    .GetAwaiter().GetResult();
+
+                    config = _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
                         .GetAwaiter().GetResult();
                     if (config is null)
                     {
@@ -870,7 +871,7 @@ namespace OVS.Rollback.Core
 
                 if (allDisconnected && match.Players.Count > 0)
                 {
-                    _ = SendEndMatchAsync(match.MatchId, match.Key);
+                    _ = _httpHelper.SendEndMatchAsync(match.MatchId, match.Key);
                     match.StopTick();
 
                     _ = Events.SendAllPlayersDisconnectedEvent(this, StatusEventArgs.CreateNew(
@@ -1306,215 +1307,7 @@ namespace OVS.Rollback.Core
                 }
             }
 
-
             return header.Sequence;
-        }
-
-
-        // ═══════════════════════════════════════════
-        //  HTTP Integration (unchanged logic)
-        // ═══════════════════════════════════════════
-
-        private async Task<OVSMatchConfig?> FetchMatchConfigAsync(string matchId, string key)
-        {
-            string path = IsOVS ? Endpoints.OVSRegister : Endpoints.MVSIRegister;
-            string url = BaseUrl + path;
-
-            var requestBody = new { matchId, key, hostname = Utilities.Hostname };
-            var json = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            try
-            {
-                var response = await _httpClient.PostAsync(url, content);
-                var body = await response.Content.ReadAsStringAsync();
-                return JsonSerializer.Deserialize<OVSMatchConfig>(body);
-            }
-            catch (Exception ex)
-            {
-                Log.FetchConfigFailed(_logger, matchId, ex);
-                return null;
-            }
-        }
-
-        private async Task SendEndMatchAsync(string matchId, string key)
-        {
-            string path = IsOVS ? Endpoints.OVSEndMatch : Endpoints.MVSIEndMatch;
-            string url = BaseUrl + path;
-
-            var requestBody = new { matchId, key, hostname = Utilities.Hostname };
-            var json = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            try
-            {
-                await _httpClient.PostAsync(url, content);
-                Log.MatchEnded(_logger, matchId, url);
-            }
-            catch (Exception ex)
-            {
-                Log.EndMatchFailed(_logger, url, ex);
-            }
-        }
-
-        // ═══════════════════════════════════════════
-        //  Configuration
-        // ═══════════════════════════════════════════
-
-        private string GetBaseUrlFromEnv()
-        {
-            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? "";
-            IsOVS = !string.IsNullOrEmpty(url);
-
-            if (string.IsNullOrEmpty(url))
-            {
-                IsOVS = false;
-                Log.OVSNotSet(_logger);
-                url = Environment.GetEnvironmentVariable("mvsi_server") ?? "";
-                IsMVSI = !string.IsNullOrEmpty(url);
-            }
-
-            if (!string.IsNullOrEmpty(url) && url.EndsWith('/'))
-                return url[..^1];
-
-            if (!IsOVS && !IsMVSI)
-                Log.NoServerConfigured(_logger);
-
-            return url;
-        }
-
-
-        public static partial class Log
-        {
-            // ── Server Lifecycle ──
-
-            [LoggerMessage(EventId = 1000, Level = LogLevel.Information,
-                Message = "Listening on UDP port {Port}")]
-            public static partial void Listening(ILogger logger, ushort port);
-
-            [LoggerMessage(EventId = 1001, Level = LogLevel.Information,
-                Message = "OVS server started ({ServerType} on port: {port})")]
-            public static partial void ServerStarted(ILogger logger, string serverType, ushort port);
-
-            [LoggerMessage(EventId = 1002, Level = LogLevel.Information,
-                Message = "OVS server stopped")]
-            public static partial void ServerStopped(ILogger logger);
-
-            [LoggerMessage(EventId = 1003, Level = LogLevel.Information,
-                Message = "Server running. Press Ctrl+C to stop.")]
-            public static partial void ServerRunning(ILogger logger);
-
-            [LoggerMessage(EventId = 1004, Level = LogLevel.Information,
-                Message = "Shutting down server...")]
-            public static partial void ShuttingDown(ILogger logger);
-
-            [LoggerMessage(EventId = 1005, Level = LogLevel.Information,
-                Message = "Match data endpoint: {baseURL}")]
-            public static partial void MatchEndpoint(ILogger logger, string baseURL);
-
-            // ── Match Lifecycle ──
-
-            [LoggerMessage(EventId = 1100, Level = LogLevel.Information,
-                Message = "New Match: {MatchId}")]
-            public static partial void NewMatch(ILogger logger, string matchId);
-
-            [LoggerMessage(EventId = 1101, Level = LogLevel.Information,
-                Message = "Match {MatchId} cleaned up (all players disconnected)")]
-            public static partial void MatchCleanedUp(ILogger logger, string matchId);
-
-            [LoggerMessage(EventId = 1102, Level = LogLevel.Information,
-                Message = "Sent end match notice for Match ID {matchID} to URL: {url}")]
-            public static partial void MatchEnded(ILogger logger, string matchId, string url);
-
-            [LoggerMessage(EventId = 1103, Level = LogLevel.Information,
-                Message = "Received connection from IP address: {ip}")]
-            public static partial void ConnectionReceived(ILogger logger, string ip);
-
-            // ── Player Lifecycle ──
-
-            [LoggerMessage(EventId = 1200, Level = LogLevel.Information,
-                Message = "Player {PlayerIndex} joined match {matchID}")]
-            public static partial void PlayerJoined(ILogger logger, ushort playerIndex, string matchID);
-
-            [LoggerMessage(EventId = 1201, Level = LogLevel.Information,
-                Message = "Player index {PlayerIndex} for matchID {matchID} timed out (no input for {Timeout}s)")]
-            public static partial void PlayerTimedOut(ILogger logger, ushort playerIndex, string matchID, int timeout);
-
-            [LoggerMessage(EventId = 1202, Level = LogLevel.Information,
-                Message = "Player index {PlayerIndex} sent Disconnecting message for Match ID: {matchID}")]
-            public static partial void PlayerDisconnecting(ILogger logger, ushort playerIndex, string matchID);
-
-            // ── Ping Phase ──
-
-            [LoggerMessage(EventId = 1300, Level = LogLevel.Information,
-                Message = "Starting ping phase for Match ID: {matchID}")]
-            public static partial void PingPhaseStarted(ILogger logger, string matchID);
-
-            [LoggerMessage(EventId = 1301, Level = LogLevel.Information,
-                Message = "Broadcasting players configuration for match {matchID}")]
-            public static partial void BroadcastingPlayersConfig(ILogger logger, string matchID);
-
-            // ── Rift ──
-
-            [LoggerMessage(EventId = 1400, Level = LogLevel.Information,
-                Message = "MatchID: {matchID} PIndex:{PlayerIndex} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
-            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex,
-                short ping, float smoothRift, float rawRift, float clientFrame, uint serverFrame);
-
-            // ── Tick Performance ──
-
-            [LoggerMessage(EventId = 1500, Level = LogLevel.Information,
-                Message = "Average tick interval: {AvgUs:F0} μs")]
-            public static partial void TickPerformance(ILogger logger, double AvgUs);
-
-            // ── Warnings ──
-
-            [LoggerMessage(EventId = 2000, Level = LogLevel.Warning,
-                Message = "DESYNC at frame {Frame}: player {PlayerA}={ChecksumA} vs player {PlayerB}={ChecksumB}")]
-            public static partial void DesyncDetected(ILogger logger, uint frame,
-                ushort playerA, string checksumA, ushort playerB, string checksumB);
-
-            [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
-                Message = "Bit-packing fallback: {Reason}")]
-            public static partial void BitPackingFallback(ILogger logger, string reason);
-
-            [LoggerMessage(EventId = 2002, Level = LogLevel.Warning,
-                Message = "OVS_SERVER not set, checking mvsi_server")]
-            public static partial void OVSNotSet(ILogger logger);
-
-            [LoggerMessage(EventId = 2003, Level = LogLevel.Warning,
-                Message = "Neither OVS_SERVER nor mvsi_server set")]
-            public static partial void NoServerConfigured(ILogger logger);
-
-            // ── Errors ──
-
-            [LoggerMessage(EventId = 3000, Level = LogLevel.Error,
-                Message = "UDP receive error: ")]
-            public static partial void ReceiveError(ILogger logger, Exception exception);
-
-            [LoggerMessage(EventId = 3001, Level = LogLevel.Error,
-                Message = "Error handling message: ")]
-            public static partial void HandleError(ILogger logger, Exception exception);
-
-            [LoggerMessage(EventId = 3002, Level = LogLevel.Error,
-                Message = "Send failed to player {PlayerIndex} for MatchID {matchID}: ")]
-            public static partial void SendFailed(ILogger logger, ushort playerIndex, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3003, Level = LogLevel.Error,
-                Message = "Failed to fetch match config for match: {matchID}")]
-            public static partial void FetchConfigFailed(ILogger logger, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3004, Level = LogLevel.Error,
-                Message = "Ping phase error for Match ID {matchID}: ")]
-            public static partial void PingPhaseError(ILogger logger, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3005, Level = LogLevel.Error,
-                Message = "Failed to POST end-match to {Url}, exception: ")]
-            public static partial void EndMatchFailed(ILogger logger, string url, Exception exception);
-
-            [LoggerMessage(EventId = 3006, Level = LogLevel.Error,
-                Message = "Invalid JSON from {Path}")]
-            public static partial void InvalidJson(ILogger logger, string path);
         }
     }
 }

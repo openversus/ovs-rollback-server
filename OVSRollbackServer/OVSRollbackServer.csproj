@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>OVS</RootNamespace>
+    <RootNamespace>OVS.Rollback</RootNamespace>
     <AssemblyName>OVS.Rollback.Server</AssemblyName>
     <!-- Server GC: dedicated GC threads, shorter pauses under allocation pressure -->
     <ServerGarbageCollection>true</ServerGarbageCollection>

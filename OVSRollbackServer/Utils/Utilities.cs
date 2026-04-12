@@ -1,12 +1,66 @@
 // Utilities.cs
 using Microsoft.Extensions.Logging;
-using System.Runtime.CompilerServices;
 using System;
+using System.Runtime.CompilerServices;
+using static OVS.Rollback.Core.LoggerTemplates;
 
 namespace OVS.Rollback
 {
     public static class Utilities
     {
+        private class UtilitiesLog { }
+        private static readonly ILogger<UtilitiesLog> logger = NewLogger<UtilitiesLog>();
+        private static bool _isOVS = default;
+        private static bool _isMVSI = default;
+        public static string BaseUrl { get; private set; } = "";
+        public static bool IsOVS {
+            
+            get {
+                if (_isOVS == default || _isMVSI == default)
+                {
+                    GetBaseUrlFromEnv();
+                }
+                return _isOVS;
+            }
+            private set { _isOVS = value; }
+        }
+        public static bool IsMVSI
+        {
+            get => !IsOVS;
+            private set { _isMVSI = value; }
+        }
+        public static string GetBaseUrlFromEnv(ILogger _logger)
+        {
+            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? "";
+            _isOVS = !string.IsNullOrWhiteSpace(url);
+
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                _isOVS = false;
+                Log.OVSNotSet(_logger);
+                url = Environment.GetEnvironmentVariable("mvsi_server") ?? "";
+                _isMVSI = !string.IsNullOrWhiteSpace(url);
+            }
+
+            if (!string.IsNullOrWhiteSpace(url) && url.EndsWith('/'))
+                return url[..^1];
+
+            if (!_isOVS && !_isMVSI)
+                Log.NoServerConfigured(_logger);
+
+            return url;
+        }
+
+        public static string GetBaseUrlFromEnv<T>(ILogger<T> _logger) where T : class
+        {
+            return GetBaseUrlFromEnv((ILogger)_logger);
+        }
+
+        public static string GetBaseUrlFromEnv()
+        {
+            return GetBaseUrlFromEnv((ILogger) logger);
+        }
+
         public static string TernaryNullCoalesce<T>(T? value, string nullMessage = "") where T : class
         {
             return value != null ? value.ToString() ?? nullMessage : nullMessage;

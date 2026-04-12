@@ -271,4 +271,28 @@ namespace OVS.Rollback.Models
     {
         public ushort Port { get; set; }
     }
+
+
+    // ──────────────────────────────────────────────
+    //  Server → Server Payloads
+    // ──────────────────────────────────────────────
+
+    [Serializable]
+    public class RegisterPayload
+    {
+        public string MatchId { get; set; } = String.Empty;
+        public string Key { get; set; } = String.Empty;
+
+        public static readonly string Hostname = Utilities.Hostname;
+    }
+
+    // Yes, this is the same as RegisterPayload now, but it's conceptually a different action and may diverge in the future, so it deserves its own type for clarity and maintainability
+    [Serializable]
+    public class EndMatchPayload
+    {
+        public string MatchId { get; set; } = String.Empty;
+        public string Key { get; set; } = String.Empty;
+
+        public static readonly string Hostname = Utilities.Hostname;
+    }
 }
