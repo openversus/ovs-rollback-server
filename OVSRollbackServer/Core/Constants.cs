@@ -5,7 +5,7 @@ namespace OVS.Rollback.Core
     public static class Constants
     {
         public const ushort GameServerPort = 41234;
-        public const int MaxPlayers = 6;
+        public const int MaxPlayers = 8;
         public const bool EmulateP2 = false;
 
         public static class Endpoints

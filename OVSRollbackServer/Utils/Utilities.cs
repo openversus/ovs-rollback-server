@@ -1,11 +1,35 @@
 // Utilities.cs
 using Microsoft.Extensions.Logging;
 using System;
+using System.Text;
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
 using static OVS.Rollback.Core.LoggerTemplates;
 
 namespace OVS.Rollback
 {
+    public enum HMACType
+    {
+        Hexlower = 0,
+        Hexupper = 1,
+        Hex = 1,
+        Base64 = 2,
+        Base64Lower = 2,
+        Base64Upper = 3,
+        ByteArray = 4
+    }
+
+    public enum HMACHashAlgorithm
+    {
+        MD5 = 0,
+        SHA1 = 1,
+        SHA256 = 2,
+        SHA384 = 3,
+        SHA512 = 4,
+        SHA3_256 = 5,
+        SHA3_384 = 6,
+        SHA3_512 = 7
+    }
     public static class Utilities
     {
         private class UtilitiesLog { }
@@ -123,6 +147,57 @@ namespace OVS.Rollback
                     });
             });
             return loggerFactory.CreateLogger<T>();
+        }
+
+        public static T CreateHMAC<T>(byte[] key, string message, HMACType type, HMACHashAlgorithm algo = HMACHashAlgorithm.SHA1) where T : class
+        {
+            T? returnObject = default;
+            using HMAC hmac = algo switch {
+                HMACHashAlgorithm.MD5 => new HMACMD5(key),
+                HMACHashAlgorithm.SHA1 => new HMACSHA1(key),
+                HMACHashAlgorithm.SHA256 => new HMACSHA256(key),
+                HMACHashAlgorithm.SHA384 => new HMACSHA384(key),
+                HMACHashAlgorithm.SHA512 => new HMACSHA512(key),
+                HMACHashAlgorithm.SHA3_256 => new HMACSHA3_256(key),
+                HMACHashAlgorithm.SHA3_384 => new HMACSHA3_384(key),
+                HMACHashAlgorithm.SHA3_512 => new HMACSHA3_512(key),
+                _ => new HMACSHA1(key),
+            };
+
+            Func<string, byte[], string> HexHash = (message, key) => {
+                var messageByteArray = Encoding.UTF8.GetBytes(message);
+                using var memoryStream = new MemoryStream(messageByteArray);
+                return hmac.ComputeHash(memoryStream).Aggregate("", (s, e) => s + String.Format("{0:x2}", e), s => s);
+            };
+
+            switch (type)
+            {
+                case HMACType.Hex:
+                    returnObject = HexHash(message, key).ToUpper() as T;
+                    break;
+                case HMACType.Hexlower:
+                    returnObject = HexHash(message, key).ToLower() as T;
+                    break;
+                case HMACType.ByteArray:
+                    returnObject = hmac.ComputeHash(Encoding.UTF8.GetBytes(message)) as T;
+                    break;
+                case HMACType.Base64:
+                    returnObject = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(message))) as T;
+                    break;
+                case HMACType.Base64Upper:
+                    returnObject = Convert.ToBase64String(hmac.ComputeHash(Encoding.UTF8.GetBytes(message))).ToUpper() as T;
+                    break;
+                default:
+                    returnObject = HexHash(message, key).ToLower() as T;
+                    break;
+            }
+
+            return returnObject ?? throw new InvalidOperationException($"Failed to create HMACSHA1 hash of type {type} for the given key and message.");
+        }
+
+        public static T CreateHMAC<T>(string key, string message, HMACType type) where T : class
+        {
+            return CreateHMAC<T>(Encoding.UTF8.GetBytes(key), message, type);
         }
     }
 }

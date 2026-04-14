@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
+using OVS.Rollback.Utils;
 using static OVS.Rollback.Core.Constants;
 using static OVS.Rollback.Core.LoggerTemplates;
 
@@ -46,6 +47,8 @@ namespace OVS.Rollback.Utils
         public string MatchStatusURL { get => BaseUrl + MatchStatusPath; }
 
         private ServerConfiguration Config { get => ServerConfiguration.Instance; }
+
+        private string parsedMatchUpdateKey { get => Config.Server.MatchUpdateKey ?? "MisconfiguredMatchUpdateKey"; }
 
         public HTTPHelper()
         {
@@ -89,18 +92,31 @@ namespace OVS.Rollback.Utils
         public async Task<HttpResponseMessage> PostJsonAsync(string url, object data, Dictionary<string, string>? headers = null)
         {
             HttpResponseMessage response;
+            Dictionary<string, string> requestHeaders = headers ?? new Dictionary<string, string>();
+
+            if (!requestHeaders.ContainsKey("MatchUpdateKey"))
+            {
+                requestHeaders.Add("MatchUpdateKey", parsedMatchUpdateKey);
+            }
+            else if (!string.IsNullOrWhiteSpace(requestHeaders["MatchUpdateKey"]))
+            {
+                requestHeaders["MatchUpdateKey"] = parsedMatchUpdateKey;
+            }
+
             try
             {
                 var json = JsonSerializer.Serialize(data);
+                var contentHash = Utilities.CreateHMAC<string>(parsedMatchUpdateKey, json, HMACType.Hexlower);
+                requestHeaders["MatchUpdateKey"] = contentHash;
+
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                if (headers != null)
+
+                foreach (var header in requestHeaders)
                 {
-                    foreach (var header in headers)
-                    {
-                        content.Headers.Add(header.Key, header.Value);
-                    }
+                    content.Headers.Add(header.Key, header.Value);
                 }
-                _logger.LogInformation("{LogPrefix} Sending POST request to {Url} with payload: {Payload}", LogPrefix, url, json);
+
+                _logger.LogInformation("{LogPrefix} Sending POST request to {Url} with HMAC hash: {hash} and payload: {Payload}", LogPrefix, url, contentHash, json);
                 response = await _httpClient.PostAsync(url, content);
 
                 if (null != response)
@@ -119,9 +135,20 @@ namespace OVS.Rollback.Utils
 
         public async Task<string> PostJsonAsync(string url, object data, Dictionary<string, string>? headers = null, bool? returnBody = false)
         {
+            Dictionary<string, string> requestHeaders = headers ?? new Dictionary<string, string>();
+
+            if (!requestHeaders.ContainsKey("MatchUpdateKey"))
+            {
+                requestHeaders.Add("MatchUpdateKey", parsedMatchUpdateKey);
+            }
+            else if (!string.IsNullOrWhiteSpace(requestHeaders["MatchUpdateKey"]))
+            {
+                requestHeaders["MatchUpdateKey"] = parsedMatchUpdateKey;
+            }
+
             try
             {
-                var response = await PostJsonAsync(url, data, headers);
+                var response = await PostJsonAsync(url, data, requestHeaders);
                 var body = await response.Content.ReadAsStringAsync() ?? string.Empty;
                 return body;
             }
