@@ -12,11 +12,15 @@ namespace OVS.Rollback.Core
 
         public HeartBeat()
         {
-            _stopwatch = new();
+            _stopwatch = Server.RunTimer;
         }
         protected internal async Task StartLoop()
         {
-            _stopwatch.Start();
+            if (!Server.RunTimer.IsRunning)
+            {
+                Server.RunTimer.Start();
+            }
+
             bool firstHeartBeat = true;
 
             while (!Server.cts.IsCancellationRequested)
@@ -25,12 +29,12 @@ namespace OVS.Rollback.Core
                 string descriptionText = String.Empty;
                 if  (firstHeartBeat)
                 {
-                    descriptionText = $"Server heartbeat loop started. Server has been alive for: {elapsedMs}ms ({elapsedMs / 1000})";
+                    descriptionText = $"Server heartbeat loop started. Server has been alive for: {elapsedMs}ms ({elapsedMs / 1000}s)";
                     firstHeartBeat = false;
                 }
                 else
                 {
-                    descriptionText = $"Server heartbeat. Server has been alive for: {elapsedMs}ms ({elapsedMs / 1000})";   
+                    descriptionText = $"Server heartbeat. Server has been alive for: {elapsedMs}ms ({elapsedMs / 1000}s)";   
                 }
 
                 _ = Events.SendHeartBeatEvent(this, StatusEventArgs.CreateNew(
@@ -42,14 +46,12 @@ namespace OVS.Rollback.Core
 
                 if (Server.MementoMori && _stopwatch.ElapsedMilliseconds >= 510000)
                 {
-                    _ = Events.SendServerIdleEvent(this, StatusEventArgs.CreateNew(
-                            description: "ServerIdle",
-                            matchEvent: "HeartBeat",
+                    _ = Events.SendMementoMoriEvent(this, StatusEventArgs.CreateNew(
+                            description: "HeartBeat",
+                            matchEvent: "MementoMori",
                             matchDescription: $"The server has been alive for over 8.5 minutes. Memento Mori."
                             )
                         );
-
-                    await DisposeAsync();
                 }
 
                 await Task.Delay(60000);
@@ -62,12 +64,11 @@ namespace OVS.Rollback.Core
         protected internal async Task StopLoop()
         {
             long elapsedMs = _stopwatch.ElapsedMilliseconds;
-            _stopwatch.Stop();
 
             _ = Events.SendHeartBeatEvent(this, StatusEventArgs.CreateNew(
                     description: "HeartBeat",
                     matchEvent: "HeartBeat",
-                    matchDescription: $"Server heartbeat loop stopped. Server was alive for: {elapsedMs}ms ({elapsedMs / 1000})"
+                    matchDescription: $"Server heartbeat loop stopped. Server heartbeat loop was alive for: {elapsedMs}ms ({elapsedMs / 1000}s)"
                     )
                 );
         }

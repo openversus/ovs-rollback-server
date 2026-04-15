@@ -1,5 +1,6 @@
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Models;
+using OVS.Rollback.Utils;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -30,6 +31,7 @@ namespace OVS.Rollback.Core
         protected internal static event MatchEventHandler? OnError;
         protected internal static event MatchEventHandler? OnTerminatingError;
         protected internal static event MatchEventHandler? OnServerIdle;
+        protected internal static event MatchEventHandler? OnMementoMori;
 
         private static void FireMatchStatusEvent(MatchEventHandler? eventHandler, object? sender, StatusEventArgs args)
         {
@@ -131,6 +133,7 @@ namespace OVS.Rollback.Core
             FireMatchStatusEvent(OnMatchEnd, sender, e);
             if (Server.MementoMori)
             {
+                SignalSender.MementoMori();
                 Server.cts.Cancel();
             }
             return Task.CompletedTask;
@@ -139,6 +142,13 @@ namespace OVS.Rollback.Core
         public static Task SendServerIdleEvent(object? sender, StatusEventArgs e)
         {
             FireMatchStatusEvent(OnServerIdle, sender, e);
+            return Task.CompletedTask;
+        }
+
+        public static Task SendMementoMoriEvent(object? sender, StatusEventArgs e)
+        {
+            FireMatchStatusEvent(OnMementoMori, sender, e);
+            SignalSender.MementoMori();
             return Task.CompletedTask;
         }
 
@@ -174,5 +184,6 @@ namespace OVS.Rollback.Core
         protected internal static Task<MatchStatusResponse?> OnErrorHandler(object sender, StatusEventArgs args) => OnError?.Invoke(args) ?? _defaultResponse;
         protected internal static Task<MatchStatusResponse?> OnTerminatingErrorHandler(object sender, StatusEventArgs args) => OnTerminatingError?.Invoke(args) ?? _defaultResponse;
         protected internal static Task<MatchStatusResponse?> OnServerIdleHandler(object sender, StatusEventArgs args) => OnServerIdle?.Invoke(args) ?? _defaultResponse;
+        protected internal static void OnMementoMoriHandler(object sender, StatusEventArgs args) => OnMementoMori?.Invoke(args);
     }
 }

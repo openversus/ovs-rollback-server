@@ -108,7 +108,7 @@ namespace OVS.Rollback.Core
             _ = Events.SendServerListeningEvent(this, StatusEventArgs.CreateNew(
                      description: "ServerListening",
                      matchEvent: "ServerListening",
-                     matchDescription: "ServerListening"
+                     matchDescription: $"OVS rollback server has started listening on {_port}"
                      )
                 );
             Log.Listening(_logger, _port);

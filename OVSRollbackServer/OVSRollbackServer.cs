@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using OVS;
 using OVS.Rollback.Core;
+using OVS.Rollback.Models;
 using OVS.Rollback.Utils;
 using OVS.Rollback.Configuration;
 using System;
@@ -17,16 +18,20 @@ namespace OVS.Rollback
         private static readonly ILogger<Server> logger = Utilities.NewLogger<Server>();
         internal static readonly HTTPHelper HttpHelper = new HTTPHelper(logger);
         protected internal static CancellationTokenSource cts = new CancellationTokenSource();
+        private static readonly System.Diagnostics.Stopwatch _runTimer = new();
 
         // If true, the server will self-destruct after the first match ends
         // If you plan to have long-running, non-ephemeral servers, set this to false and ensure you have a proper cleanup strategy in place to stop the server when it's no longer needed
         // Official OpenVersus servers are auto-provisioned/deprovisioned on-demand per game, so this is a (redundant) safety measure to prevent orphaned servers from running indefinitely
         // The primary method is a cleanup script scheduled via atd as part of the provisioning process, but this is an extra "just in case" measure
         protected internal static bool MementoMori = false;
+        protected internal static System.Diagnostics.Stopwatch RunTimer { get => _runTimer; }
         public static readonly string LogPrefix = Utilities.LogPrefix;
 
         public static async Task<int> Main(string[] args)
         {
+            RunTimer.Start();
+
             // ═══════════════════════════════════════════
             //  Initialize Configuration
             // ═══════════════════════════════════════════
@@ -126,6 +131,7 @@ namespace OVS.Rollback
                 },
                 onShutdown: () =>
                 {
+                    pacemaker.StopLoop().Wait();
                     cts.Cancel();
                 });
 
@@ -182,8 +188,11 @@ namespace OVS.Rollback
             }
             finally
             {
+                logger.LogInformation("{LogPrefix} Server stopped. Cleaning up resources...", LogPrefix);
                 meterProvider?.Dispose();
                 SignalHandler.Dispose();
+                logger.LogInformation("{LogPrefix} Total runtime was: {runTime}s", LogPrefix, (RunTimer.ElapsedMilliseconds / 1000));
+                RunTimer.Stop();
             }
 
             return 0;
@@ -209,6 +218,11 @@ namespace OVS.Rollback
             Events.OnError                     +=    HttpHelper.SendMatchStatus;
             Events.OnTerminatingError          +=    HttpHelper.SendMatchStatus;
             Events.OnServerIdle                +=    HttpHelper.SendMatchStatus;
+            Events.OnMementoMori               +=    HttpHelper.SendMatchStatus;
+            //Events.OnMementoMori += (_) => {
+            //    SignalSender.MementoMori();
+            //    return Task.FromResult(default(MatchStatusResponse)!);
+            //};
         }
     }
 }
