@@ -412,14 +412,16 @@ namespace OVS.Rollback.Core
             string playerCharacter = "Unknown";
             ushort payloadIndex = payload.PlayerData.PlayerIndex;
 
-            foreach (var player in match.Players)
+            if (match.Players.TryGetValue(key, out var existingPlayer))
             {
-                if (player.Value.PlayerIndex == payloadIndex)
-                {
-                    playerID = player.Value.PlayerId;
-                    playerName = player.Value.PlayerName;
-                    playerCharacter = player.Value.PlayerCharacter;
-                }
+                return match.Players[key];
+            }
+
+            else
+            {
+                playerID = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerId ?? "Unknown";
+                playerName = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerName ?? "Unknown";
+                playerCharacter = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerCharacter ?? "Unknown";
             }
 
             if (playerID == "Unknown" || playerName == "Unknown" || playerCharacter == "Unknown")
