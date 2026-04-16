@@ -296,6 +296,17 @@ namespace OVS.Rollback.Core
                         break;
                     case ClientMessageType.ReadyToStartMatch:
                         HandleReady(match, player, ((ReadyToStartMatchPayload)clientMsg.Value.Payload).Ready == 1);
+                        _ = Events.SendPlayerReadyEvent(this, StatusEventArgs.CreateNew(
+                                description: "PlayerReady",
+                                matchEvent: "PlayerReady",
+                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} readied-up in match {player.MatchId}",
+                                matchKey: match.Key,
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
+                                )
+                            );
                         break;
                     case ClientMessageType.Input:
                         HandleClientInput(match, player, (InputPayload)clientMsg.Value.Payload);
@@ -345,11 +356,8 @@ namespace OVS.Rollback.Core
                 if (!_matches.TryGetValue(matchData.MatchId, out match))
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
+
                     // Synchronous HTTP call - we're on ThreadPool, blocking is OK
-
-                    //config = FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
-                    //    .GetAwaiter().GetResult();
-
                     config = _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
                         .GetAwaiter().GetResult();
                     if (config is null)
@@ -375,12 +383,10 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
-                        //Inputs = new(config.MaxPlayers),
                         Inputs = new(config.ActualPlayers),
                         Workspace = new TickWorkspace(config.MaxPlayers)
                         //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
-                    //for (int i = 0; i < config.MaxPlayers; i++)
                     for (int i = 0; i < config.ActualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
@@ -504,7 +510,6 @@ namespace OVS.Rollback.Core
                 StartPingPhase(match);
             }
 
-
             return newPlayer;
         }
 
@@ -530,8 +535,8 @@ namespace OVS.Rollback.Core
                 );
 
             uint count = 0;
-            System.Threading.Timer? timer = null;
-            timer = new System.Threading.Timer(_ => {
+            Timer? timer = null;
+            timer = new Timer(_ => {
                 if (count >= config.PingPhase.TotalPings || !_running)
                 {
                     timer?.Dispose();
@@ -547,7 +552,6 @@ namespace OVS.Rollback.Core
             match.PingPhaseTimer = timer;
 
         }
-
         private void BroadcastRequestQuality(MatchState match)
         {
             long ts = Stopwatch.GetTimestamp();
@@ -569,7 +573,6 @@ namespace OVS.Rollback.Core
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
-                //if (player.IsSpectator || player.Disconnected)
                 if (player.Disconnected)
                 {
                     continue;
@@ -684,15 +687,12 @@ namespace OVS.Rollback.Core
             }
         }
 
-
         private void HandleClientInput(MatchState match, PlayerInfo player, InputPayload payload)
         {
             if (player.IsSpectator)
             {
                 return; // Spectators don't send inputssf
             }
-            var config = ServerConfiguration.Instance;
-
 
             lock (player.Lock)
             {
