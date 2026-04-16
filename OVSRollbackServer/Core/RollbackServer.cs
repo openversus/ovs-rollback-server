@@ -566,9 +566,18 @@ namespace OVS.Rollback.Core
         }
         private void BroadcastPlayersConfiguration(MatchState match)
         {
-            ReadOnlySpan<ushort> mapping = stackalloc ushort[] { 0, 256, 513, 769 };
-            int count = 0;
-            foreach (var _ in match.Players) count++;
+            //ReadOnlySpan<ushort> mapping = [0, 256, 513, 769];
+            ReadOnlySpan<ushort> mapping = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
+            //int count = match.Players.Count;
+
+            //ushort[] mappingArray = new ushort[match.Players.Count];
+            //for (int i = 0; i < match.Players.Count; i++)
+            //{
+            //    mappingArray[i] = (ushort)((i % 4) * 256);
+            //}
+            //ReadOnlySpan<ushort> mapping = mappingArray;
+
+            //foreach (var _ in match.Players) count++;
 
             foreach (var kvp in match.Players)
             {
@@ -580,10 +589,15 @@ namespace OVS.Rollback.Core
 
                 var configValues = new List<ushort>(match.MaxPlayers);
                 for (int i = 0; i < match.MaxPlayers; i++)
-                    configValues.Add(mapping[i % 4]);
+                {
+                    //configValues.Add(mapping[i]);
+                    configValues.Add(mapping[i % (configValues.Capacity + 1)]);
+                }
+                //configValues.Add(mapping[i % 4]);
 
                 var payload = new PlayersConfigurationDataPayload {
-                    NumPlayers = (byte)count,
+                    //NumPlayers = (byte)count,
+                    NumPlayers = (byte)match.Players.Count,
                     ConfigValues = configValues
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
