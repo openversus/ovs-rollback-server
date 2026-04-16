@@ -11,6 +11,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime;
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using static OVS.Rollback.Core.Constants;
 using static OVS.Rollback.Core.LoggerTemplates;
 
@@ -403,16 +404,48 @@ namespace OVS.Rollback.Core
                 return existing;
             }
 
+            string playerID = "Unknown";
+            string playerName = "Unknown";
+            string playerCharacter = "Unknown";
+            ushort payloadIndex = payload.PlayerData.PlayerIndex;
+
+            foreach (var player in match.Players)
+            {
+                if (player.Value.PlayerIndex == payloadIndex)
+                {
+                    playerID = player.Value.PlayerId;
+                    playerName = player.Value.PlayerName;
+                    playerCharacter = player.Value.PlayerCharacter;
+                }
+            }
+
+            if (playerID == "Unknown" || playerName == "Unknown" || playerCharacter == "Unknown")
+            {
+                string errorMsg = $"Player data mismatch for PlayerIndex {payloadIndex} in MatchId {matchData.MatchId}. Received PlayerIndex does not match any player in the match configuration.";
+                _logger.LogWarning(
+                    "Player data mismatch for PlayerIndex {PlayerIndex} in MatchId {MatchId}. " +
+                    "Received PlayerIndex does not match any player in the match configuration. " +
+                    "This may indicate a client error. MatchData is: {matchdata}",
+                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload));
+                _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
+                        description: "DataError",
+                        matchEvent: "DataError",
+                        matchDescription: errorMsg,
+                        matchKey: matchData.Key,
+                        matchId: matchData.MatchId,
+                        matchPlayerId: playerID,
+                        exception: new InvalidDataException(errorMsg)
+                        )
+                    );
+            }
+
             var newPlayer = new PlayerInfo {
                 EndPoint = remote,
                 MatchId = matchData.MatchId,
-                PlayerIndex = payload.PlayerData.PlayerIndex,
-                PlayerId = match.Players.Where(p => p.Value.PlayerIndex == payload.PlayerData.PlayerIndex)
-                    .Select(p => p.Value.PlayerId).FirstOrDefault() ?? "Unknown",
-                PlayerName = match.Players.Where(p => p.Value.PlayerIndex == payload.PlayerData.PlayerIndex)
-                    .Select(p => p.Value.PlayerName).FirstOrDefault() ?? "Unknown",
-                PlayerCharacter = match.Players.Where(p => p.Value.PlayerIndex == payload.PlayerData.PlayerIndex)
-                    .Select(p => p.Value.PlayerCharacter).FirstOrDefault() ?? "Unknown",
+                PlayerIndex = payloadIndex,
+                PlayerId = playerID,
+                PlayerName = playerName,
+                PlayerCharacter = playerCharacter,
                 IsSpectator = payload.PlayerData.PlayerIndex == 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
