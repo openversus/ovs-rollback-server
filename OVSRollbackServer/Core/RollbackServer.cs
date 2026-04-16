@@ -37,6 +37,7 @@ namespace OVS.Rollback.Core
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
+        private OVSMatchConfig? matchConfig = default;
 
         // ── Lifecycle ──
         private volatile bool _running;
@@ -397,13 +398,14 @@ namespace OVS.Rollback.Core
                             matchPlayerIds: config.Players.Select(p => p.PlayerId).ToArray()
                         )
                     );
+
+                    matchConfig = config; // Store in server-level cache for quick access during player joins
                 }
             }
             finally { _matchCreationLock.Release(); }
 
             if (_players.TryGetValue(key, out var existing))
             {
-
                 return existing;
             }
 
@@ -419,9 +421,19 @@ namespace OVS.Rollback.Core
 
             else
             {
-                playerID = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerId ?? "Unknown";
-                playerName = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerName ?? "Unknown";
-                playerCharacter = config?.Players.FirstOrDefault(p => p.PlayerIndex == payloadIndex)?.PlayerCharacter ?? "Unknown";
+                if (null != matchConfig && matchConfig != default)
+                {
+                    foreach (OvsPlayer? player in matchConfig.Players)
+                    {
+                        if (player?.PlayerIndex == payloadIndex)
+                        {
+                            playerID = player?.PlayerId ?? "Unknown";
+                            playerName = player?.PlayerName ?? "Unknown";
+                            playerCharacter = player?.PlayerCharacter ?? "Unknown";
+                            break;
+                        }
+                    }
+                }
             }
 
             if (playerID == "Unknown" || playerName == "Unknown" || playerCharacter == "Unknown")
