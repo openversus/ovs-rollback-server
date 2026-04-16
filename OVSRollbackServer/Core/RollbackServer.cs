@@ -307,7 +307,10 @@ namespace OVS.Rollback.Core
                                 matchEvent: "PlayerDisconnect",
                                 matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} disconnected from match {player.MatchId}",
                                 matchKey: match.Key,
-                                matchPlayerId: player.PlayerId
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
                                 )
                             );
                         Log.PlayerDisconnecting(_logger, player.PlayerIndex, player.MatchId ?? "Unknown");
@@ -1061,7 +1064,10 @@ namespace OVS.Rollback.Core
                                 matchEvent: "PlayerDisconnect",
                                 matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} timed out and was disconnected from match {player.MatchId} after {DisconnectTimeout} seconds without input.",
                                 matchKey: match.Key,
-                                matchPlayerId: player.PlayerId
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
                                 )
                             );
                         continue;
@@ -1264,7 +1270,10 @@ namespace OVS.Rollback.Core
                             matchEvent: "ErrorPlayerDisconnect",
                             matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
                             matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
                             matchPlayerId: player.PlayerId,
+                            matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
                             exception: ex
                             )
                         );
@@ -1331,7 +1340,10 @@ namespace OVS.Rollback.Core
                             matchEvent: "ErrorPlayerDisconnect",
                             matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
                             matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
                             matchPlayerId: player.PlayerId,
+                            matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
                             exception: ex
                             )
                         );
