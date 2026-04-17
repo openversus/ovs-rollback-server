@@ -38,6 +38,7 @@ namespace OVS.Rollback.Core
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
         private OVSMatchConfig? matchConfig = default;
+        private ConcurrentBag<string> connections = new();
 
         // ── Lifecycle ──
         private volatile bool _running;
@@ -174,8 +175,13 @@ namespace OVS.Rollback.Core
                     var data = buffer[..result.ReceivedBytes].ToArray();
                     var remote = (IPEndPoint)result.RemoteEndPoint;
 
+                    if (!connections.Contains(remote.Address.ToString()))
+                    {
+                        connections.Add(remote.Address.ToString());
+                        Log.ConnectionReceived(_logger, remote.Address.ToString());
+                    }
+
                     ServerMetrics.PacketsReceived.Add(1);
-                    Log.ConnectionReceived(_logger, remote.Address.ToString());
 
                     // NEW: Handle synchronously - we're already on ThreadPool, no need for Task
                     HandleMessage(data, result.ReceivedBytes, remote);
