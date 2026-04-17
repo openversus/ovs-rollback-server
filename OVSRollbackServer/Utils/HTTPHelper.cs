@@ -111,7 +111,8 @@ namespace OVS.Rollback.Utils
                 string jsonAsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
                 var contentHash = Utilities.CreateHMAC<string>(parsedMatchUpdateKey, jsonAsB64, HMACType.Hexlower);
                 requestHeaders.Add("BodyAsBase64", jsonAsB64);
-                requestHeaders["MatchUpdateKey"] = contentHash;
+                //requestHeaders["MatchUpdateKey"] = contentHash;
+                requestHeaders["MatchUpdateKey"] = parsedMatchUpdateKey.ToString();
 
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
