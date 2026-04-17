@@ -108,8 +108,9 @@ namespace OVS.Rollback.Utils
             try
             {
                 string json = JsonSerializer.Serialize(data);
-
-                var contentHash = Utilities.CreateHMAC<string>(parsedMatchUpdateKey, json, HMACType.Hexlower);
+                string jsonAsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
+                var contentHash = Utilities.CreateHMAC<string>(parsedMatchUpdateKey, jsonAsB64, HMACType.Hexlower);
+                requestHeaders.Add("BodyAsBase64", jsonAsB64);
                 requestHeaders["MatchUpdateKey"] = contentHash;
 
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
