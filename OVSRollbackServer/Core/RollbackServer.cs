@@ -489,7 +489,7 @@ namespace OVS.Rollback.Core
             match.Players[key] = newPlayer;
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
-            Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, matchData.MatchId);
+            Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, newPlayer.PlayerId, newPlayer.PlayerName, newPlayer.PlayerCharacter, matchData.MatchId);
             _ = Events.SendPlayerConnectEvent(this, StatusEventArgs.CreateNew(
                     description: "PlayerConnect",
                     matchEvent: "PlayerConnect",

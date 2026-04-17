@@ -133,6 +133,7 @@ namespace OVS.Rollback.Configuration
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
             Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
             Server.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", Server.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
+            Server.VerboseLogging = GetEnvBool("Server__VerboseLogging", Server.VerboseLogging);
             Server.MementoMori = GetEnvBool("Server__MementoMori", Server.MementoMori);
 
             // Performance settings
@@ -228,6 +229,7 @@ namespace OVS.Rollback.Configuration
         public string HostName { get; set; } = "";
         public bool FireMatchEvents { get; set; } = true;
         public string MatchUpdateKey { get; set; } = "MisconfiguredMatchUpdateKey";
+        public bool VerboseLogging { get; set; } = false;
         public bool MementoMori { get; set; } = true;
     }
 

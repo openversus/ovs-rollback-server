@@ -57,8 +57,15 @@ namespace OVS.Rollback.Core
             // ── Player Lifecycle ──
 
             [LoggerMessage(EventId = 1200, Level = LogLevel.Information,
-                Message = "{callerName}: Player {PlayerIndex} joined match {matchID}")]
-            public static partial void PlayerJoined(ILogger logger, ushort playerIndex, string matchID, [CallerMemberName] string callerName = "");
+                Message = "{callerName}: Player {PlayerIndex} (ID: {playerId} Name: {playerName} Character: {playerCharacter} joined match {matchID}")]
+            public static partial void PlayerJoined(
+                ILogger logger,
+                ushort playerIndex,
+                string playerId,
+                string playerName,
+                string playerCharacter,
+                string matchID,
+                [CallerMemberName] string callerName = "");
 
             [LoggerMessage(EventId = 1201, Level = LogLevel.Information,
                 Message = "{callerName}: Player index {PlayerIndex} for matchID {matchID} timed out (no input for {Timeout}s)")]

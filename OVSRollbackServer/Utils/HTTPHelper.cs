@@ -50,6 +50,8 @@ namespace OVS.Rollback.Utils
 
         private string parsedMatchUpdateKey { get => Config.Server.MatchUpdateKey ?? "MisconfiguredMatchUpdateKey"; }
 
+        public bool BeVerbose { get => Config.Server.VerboseLogging; }
+
         public HTTPHelper()
         {
             _httpClient = new HttpClient {
@@ -116,10 +118,13 @@ namespace OVS.Rollback.Utils
                     content.Headers.Add(header.Key, header.Value);
                 }
 
-                _logger.LogInformation("{LogPrefix} Sending POST request to {Url} with HMAC hash: {hash} and payload: {Payload}", LogPrefix, url, contentHash, json);
+                if (BeVerbose)
+                {
+                    _logger.LogInformation("{LogPrefix} Sending POST request to {Url} with HMAC hash: {hash} and payload: {Payload}", LogPrefix, url, contentHash, json);
+                }
                 response = await _httpClient.PostAsync(url, content);
 
-                if (null != response)
+                if (null != response && BeVerbose)
                 {
                     _logger.LogInformation("{LogPrefix} Received response with status code: {StatusCode}", LogPrefix, response.StatusCode);
                 }
