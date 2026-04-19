@@ -913,6 +913,12 @@ namespace OVS.Rollback.Core
                     Stopwatch.Frequency / 1_000_000.0);
             }
 
+            _logger.LogInformation(
+                "Starting tick loop for match {MatchId} with target interval {Interval} ms, " +
+                "spin threshold {SpinThreshold} μs (spinThreshold: {spinThreshold}), adaptive spin: {AdaptiveSpin}",
+                match.MatchId, match.TickIntervalMs, spinThreshold * 1_000_000.0 / Stopwatch.Frequency, spinThreshold,
+                config.Performance.UseAdaptiveSpinThreshold);
+
             int perfCount = 0;
             long perfStart = Stopwatch.GetTimestamp();
 
