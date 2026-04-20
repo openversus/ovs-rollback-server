@@ -12,8 +12,11 @@ namespace OVS.Rollback.Models
         // ── Connection state ──
         public volatile bool Disconnected;
         public IPEndPoint EndPoint { get; set; } = null!;
-        public string MatchId { get; set; } = "";
+        public string MatchId { get; set; } = String.Empty;
         public ushort PlayerIndex { get; set; }
+        public string PlayerId { get; set; } = String.Empty;
+        public string PlayerName { get; set; } = String.Empty;
+        public string PlayerCharacter { get; set; } = String.Empty;
         public bool IsSpectator { get; set; } = false;
 
         // ── Sequence tracking ──

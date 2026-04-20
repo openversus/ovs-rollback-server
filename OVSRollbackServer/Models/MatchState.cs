@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using OVS.Rollback.Core;
+using OVS.Rollback.Interfaces;
 
 namespace OVS.Rollback.Models
 {

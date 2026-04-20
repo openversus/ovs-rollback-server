@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Common;
 
 namespace OVS.Rollback.Configuration
 {
@@ -17,6 +18,7 @@ namespace OVS.Rollback.Configuration
         private static readonly object _lock = new();
         private static ILogger? _logger;
         private static string _configPath = "appsettings.json";
+        public static readonly string LogPrefix = Utilities.LogPrefix;
 
         // Configuration sections
         public ServerSettings Server { get; set; } = new();
@@ -50,11 +52,12 @@ namespace OVS.Rollback.Configuration
         /// <summary>
         /// Initialize configuration with logger
         /// </summary>
-        public static void Initialize(ILogger logger, string? configPath = null)
+        public static void Initialize(ILogger logger, string? configPath = "")
         {
             _logger = logger;
-            if (!string.IsNullOrEmpty(configPath))
-                _configPath = configPath;
+            if (configPath.NotNullOrEmpty)
+                // Null-forgiving operator is required here because apparently Roslyn is drunk
+                _configPath = configPath!;
             
             lock (_lock)
             {
@@ -69,12 +72,12 @@ namespace OVS.Rollback.Configuration
         {
             lock (_lock)
             {
-                _logger?.LogInformation("Reloading configuration from {ConfigPath}", _configPath);
+                _logger?.LogInformation("{LogPrefix} Reloading configuration from {ConfigPath}", LogPrefix, _configPath);
                 var newConfig = Load();
                 _instance = newConfig;
-                _logger?.LogInformation("Configuration reloaded successfully");
+                _logger?.LogInformation("{LogPrefix} Configuration reloaded successfully", LogPrefix);
 
-                _logger?.LogInformation("New configuration: {@Config}", newConfig);
+                _logger?.LogInformation("{LogPrefix} New configuration: {@Config}", LogPrefix, newConfig);
             }
         }
 
@@ -98,17 +101,17 @@ namespace OVS.Rollback.Configuration
                         AllowTrailingCommas = true
                     }) ?? new ServerConfiguration();
                     
-                    _logger?.LogInformation("Loaded configuration from {ConfigPath}", _configPath);
+                    _logger?.LogInformation("{LogPrefix} Loaded configuration from {ConfigPath}", LogPrefix, _configPath);
                 }
                 catch (Exception ex)
                 {
-                    _logger?.LogError(ex, "Failed to load configuration from {ConfigPath}, using defaults", _configPath);
+                    _logger?.LogError(ex, "{LogPrefix} Failed to load configuration from {ConfigPath}, using defaults", LogPrefix, _configPath);
                     config = new ServerConfiguration();
                 }
             }
             else
             {
-                _logger?.LogWarning("Configuration file {ConfigPath} not found, using defaults", _configPath);
+                _logger?.LogWarning("{LogPrefix} Configuration file {ConfigPath} not found, using defaults", LogPrefix, _configPath);
                 config = new ServerConfiguration();
             }
 
@@ -130,6 +133,10 @@ namespace OVS.Rollback.Configuration
                             GetEnvString("OVS_SERVER", Server.BaseUrl) ?? 
                             GetEnvString("mvsi_server", Server.BaseUrl) ?? "";
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
+            Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
+            Server.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", Server.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
+            Server.VerboseLogging = GetEnvBool("Server__VerboseLogging", Server.VerboseLogging);
+            Server.MementoMori = GetEnvBool("Server__MementoMori", Server.MementoMori);
 
             // Performance settings
             Performance.SpinThresholdMicroseconds = GetEnvInt("Performance__SpinThresholdMicroseconds", Performance.SpinThresholdMicroseconds);
@@ -185,7 +192,7 @@ namespace OVS.Rollback.Configuration
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
 
-            _logger?.LogDebug("Environment variables applied to configuration");
+            _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
 
         // Helper methods for environment variable parsing
@@ -209,8 +216,11 @@ namespace OVS.Rollback.Configuration
 
         private static bool GetEnvBool(string key, bool defaultValue)
         {
-            var value = Environment.GetEnvironmentVariable(key);
-            if (string.IsNullOrEmpty(value)) return defaultValue;
+            string value = Environment.GetEnvironmentVariable(key) ?? string.Empty;
+            if (value.StringIsNullOrEmpty)
+            {
+                return defaultValue;
+            }
             return value.ToLowerInvariant() is "true" or "1" or "yes" or "on";
         }
     }
@@ -222,6 +232,10 @@ namespace OVS.Rollback.Configuration
         public int MaxPlayers { get; set; } = 6;
         public string BaseUrl { get; set; } = "";
         public string HostName { get; set; } = "";
+        public bool FireMatchEvents { get; set; } = true;
+        public string MatchUpdateKey { get; set; } = "MisconfiguredMatchUpdateKey";
+        public bool VerboseLogging { get; set; } = false;
+        public bool MementoMori { get; set; } = true;
     }
 
     public class PerformanceSettings

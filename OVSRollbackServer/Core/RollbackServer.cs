@@ -1,5 +1,6 @@
 // RollbackServer.cs
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Common;
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Core;
 using OVS.Rollback.Models;
@@ -11,8 +12,9 @@ using System.Net;
 using System.Net.Sockets;
 using System.Runtime;
 using System.Runtime.CompilerServices;
-using System.Text;
 using System.Text.Json;
+using static OVS.Rollback.Core.Constants;
+using static OVS.Rollback.Core.LoggerTemplates;
 
 namespace OVS.Rollback.Core
 {
@@ -30,11 +32,14 @@ namespace OVS.Rollback.Core
         private readonly Socket _socket;
         private readonly object _sendLock = new();
         private readonly HttpClient _httpClient;
+        private readonly HTTPHelper _httpHelper;
         private readonly ILogger<RollbackServer> _logger;
 
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
+        private OVSMatchConfig? matchConfig = default;
+        private ConcurrentBag<string> connections = new();
 
         // ── Lifecycle ──
         private volatile bool _running;
@@ -44,14 +49,6 @@ namespace OVS.Rollback.Core
         public string BaseUrl { get; private set; } = "";
         public bool IsOVS { get; private set; }
         public bool IsMVSI { get; private set; }
-
-        private static class Endpoints
-        {
-            public const string OVSRegister = "/ovs_register";
-            public const string OVSEndMatch = "/ovs_end_match";
-            public const string MVSIRegister = "/mvsi_register";
-            public const string MVSIEndMatch = "/mvsi_end_match";
-        }
 
         // ═══════════════════════════════════════════
         //  Constructor / Lifecycle
@@ -63,6 +60,7 @@ namespace OVS.Rollback.Core
             int maxPlayers = Constants.MaxPlayers)
         {
             _logger = logger;
+            _httpHelper = new HTTPHelper(_logger);
             _port = port;
             _maxPlayers = maxPlayers;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -73,29 +71,51 @@ namespace OVS.Rollback.Core
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };
 
-            BaseUrl = GetBaseUrlFromEnv();
-            if (string.IsNullOrEmpty(BaseUrl))
-                throw new InvalidOperationException(
-                    "No base URL configured. Please set the OVS_SERVER environment variable.");
+            BaseUrl = Utilities.GetBaseUrlFromEnv(_logger) ?? string.Empty;
+            IsOVS = Utilities.IsOVS;
+            IsMVSI = Utilities.IsMVSI;
 
-            Log.Listening(_logger, _port);
+            if (BaseUrl.StringIsNullOrEmpty)
+            {
+                string errorMsg = "No base URL configured. Please set the OVS_SERVER environment variable.";
+                _ = Events.SendTerminatingErrorEvent(this, StatusEventArgs.CreateNew(
+                        description: "ConfigurationError",
+                        matchEvent: "TerminatingError",
+                        matchDescription: errorMsg,
+                        exception: new InvalidOperationException(errorMsg)
+                        )
+                    );
+            }
+
+            string serverType = IsOVS ? "OVS" : (IsMVSI ? "MVSI" : "Unknown");
+            Log.ServerStarted(_logger, serverType, _port);
         }
 
         public void Start()
         {
-            if (_running) return;
+            if (_running)
+            {
+                return;
+            }
+
             _running = true;
 
             
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
             SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
+
             // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
             _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
             _udpTask = Task.Run(RunUdpServerAsync);
 
-            string serverType = IsOVS ? "OVS" : (IsMVSI ? "MVSI" : "Unknown");
-            Log.ServerStarted(_logger, serverType, _port);
+            _ = Events.SendServerListeningEvent(this, StatusEventArgs.CreateNew(
+                     description: "ServerListening",
+                     matchEvent: "ServerListening",
+                     matchDescription: $"OVS rollback server has started listening on {_port}"
+                     )
+                );
+            Log.Listening(_logger, _port);
             Log.MatchEndpoint(_logger, BaseUrl);
         }
 
@@ -104,12 +124,25 @@ namespace OVS.Rollback.Core
             if (!_running) return;
             _running = false;
 
-            try { _socket.Shutdown(SocketShutdown.Both); } catch { }
+            try {
+                _socket.Shutdown(SocketShutdown.Both);
+            }
+            catch { }
+
             _socket.Close();
+
+            _ = Events.SendServerStopEvent(this, StatusEventArgs.CreateNew(
+                description: "ServerStopping",
+                matchEvent: "ServerStopping",
+                matchDescription: "ServerStopping"
+                )
+            );
 
             if (_udpTask is not null)
             {
-                try { await _udpTask; }
+                try {
+                    await _udpTask;
+                }
                 catch (OperationCanceledException) { }
             }
 
@@ -143,7 +176,14 @@ namespace OVS.Rollback.Core
                     var data = buffer[..result.ReceivedBytes].ToArray();
                     var remote = (IPEndPoint)result.RemoteEndPoint;
 
+                    if (!connections.Contains(remote.Address.ToString()))
+                    {
+                        connections.Add(remote.Address.ToString());
+                        Log.ConnectionReceived(_logger, remote.Address.ToString());
+                    }
+
                     ServerMetrics.PacketsReceived.Add(1);
+
                     // NEW: Handle synchronously - we're already on ThreadPool, no need for Task
                     HandleMessage(data, result.ReceivedBytes, remote);
                 }
@@ -169,7 +209,7 @@ namespace OVS.Rollback.Core
             try
             {
                 // ── Hex dump of first 16 raw bytes for diagnosis ──
-                string rawHex = Convert.ToHexString(buffer, 0, Math.Min(length, 16));
+                // string rawHex = Convert.ToHexString(buffer, 0, Math.Min(length, 16));
                 //        _logger.LogDebug("Received {Len} bytes from {Remote} raw:[{Hex}]",
                 //            length, remote, rawHex);
 
@@ -197,7 +237,7 @@ namespace OVS.Rollback.Core
                 }
 
                 // ── Hex dump of first 16 decompressed bytes ──
-                string decHex = Convert.ToHexString(decompressed, 0, Math.Min(decompressed.Length, 16));
+                // string decHex = Convert.ToHexString(decompressed, 0, Math.Min(decompressed.Length, 16));
                 //        _logger.LogDebug(
                 //           "Decompressed {InLen}->{OutLen} bytes fallback={Fallback} dec:[{Hex}]",
                 //           length, decompressed.Length, usedRawFallback, decHex);
@@ -240,13 +280,11 @@ namespace OVS.Rollback.Core
 
                 if (player is null || match is null)
                 {
-
                     return;
                 }
 
                 if (header.Sequence <= player.LastSeqRecv)
                 {
-
                     return;
                 }
                 player.LastSeqRecv = header.Sequence;
@@ -265,6 +303,17 @@ namespace OVS.Rollback.Core
                         break;
                     case ClientMessageType.ReadyToStartMatch:
                         HandleReady(match, player, ((ReadyToStartMatchPayload)clientMsg.Value.Payload).Ready == 1);
+                        _ = Events.SendPlayerReadyEvent(this, StatusEventArgs.CreateNew(
+                                description: "PlayerReady",
+                                matchEvent: "PlayerReady",
+                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} readied-up in match {player.MatchId}",
+                                matchKey: match.Key,
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
+                                )
+                            );
                         break;
                     case ClientMessageType.Input:
                         HandleClientInput(match, player, (InputPayload)clientMsg.Value.Payload);
@@ -272,6 +321,17 @@ namespace OVS.Rollback.Core
                     case ClientMessageType.Disconnecting:
                         player.Disconnected = true;
                         ServerMetrics.PlayersDisconnected.Add(1);
+                        _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
+                                description: "PlayerDisconnect",
+                                matchEvent: "PlayerDisconnect",
+                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} disconnected from match {player.MatchId}",
+                                matchKey: match.Key,
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
+                                )
+                            );
                         Log.PlayerDisconnecting(_logger, player.PlayerIndex, player.MatchId ?? "Unknown");
                         break;
                 }
@@ -303,13 +363,20 @@ namespace OVS.Rollback.Core
                 if (!_matches.TryGetValue(matchData.MatchId, out match))
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
+
                     // Synchronous HTTP call - we're on ThreadPool, blocking is OK
-                    config = FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
+                    config = _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
                         .GetAwaiter().GetResult();
                     if (config is null)
                     {
                         Log.FetchConfigFailed(_logger, matchData.MatchId, new InvalidDataException("Match config is null."));
-
+                        _ = Events.SendTerminatingErrorEvent(this, StatusEventArgs.CreateNew(
+                                description: "ConfigurationError",
+                                matchEvent: "TerminatingError",
+                                matchDescription: $"Failed to fetch match configuration for MatchId {matchData.MatchId}.",
+                                matchKey: matchData.Key
+                                )
+                            );
                         return null;
                     }
 
@@ -323,32 +390,92 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
-                        //Inputs = new(config.MaxPlayers),
                         Inputs = new(config.ActualPlayers),
                         Workspace = new TickWorkspace(config.MaxPlayers)
                         //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
-                    //for (int i = 0; i < config.MaxPlayers; i++)
                     for (int i = 0; i < config.ActualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
                     }
                     _matches[matchData.MatchId] = match;
                     ServerMetrics.MatchesStarted.Add(1);
+
+                    _ = Events.SendConfigReceivedEvent(this, StatusEventArgs.CreateNew(
+                            description: "MatchConfigReceived",
+                            matchEvent: "MatchConfigReceived",
+                            matchDescription: $"Successfully fetched match configuration for MatchId {matchData.MatchId}.",
+                            matchKey: matchData.Key,
+                            matchId: matchData.MatchId,
+                            matchNumPlayers: config.ActualPlayers,
+                            matchPlayerIds: config.Players.Select(p => p.PlayerId).ToArray()
+                        )
+                    );
+
+                    matchConfig = config; // Store in server-level cache for quick access during player joins
                 }
             }
             finally { _matchCreationLock.Release(); }
 
             if (_players.TryGetValue(key, out var existing))
             {
-
                 return existing;
+            }
+
+            string playerID = "Unknown";
+            string playerName = "Unknown";
+            string playerCharacter = "Unknown";
+            ushort payloadIndex = payload.PlayerData.PlayerIndex;
+
+            if (match.Players.TryGetValue(key, out var existingPlayer))
+            {
+                return match.Players[key];
+            }
+
+            else
+            {
+                if (null != matchConfig && matchConfig != default)
+                {
+                    foreach (OvsPlayer? player in matchConfig.Players)
+                    {
+                        if (player?.PlayerIndex == payloadIndex)
+                        {
+                            playerID = player?.PlayerId ?? "Unknown";
+                            playerName = player?.PlayerName ?? "Unknown";
+                            playerCharacter = player?.PlayerCharacter ?? "Unknown";
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (playerID == "Unknown" || playerName == "Unknown" || playerCharacter == "Unknown")
+            {
+                string errorMsg = $"Player data mismatch for PlayerIndex {payloadIndex} in MatchId {matchData.MatchId}. Received PlayerIndex does not match any player in the match configuration.";
+                _logger.LogWarning(
+                    "Player data mismatch for PlayerIndex {PlayerIndex} in MatchId {MatchId}. " +
+                    "Received PlayerIndex does not match any player in the match configuration. " +
+                    "This may indicate a client error. MatchData is: {matchdata}",
+                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload));
+                _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
+                        description: "DataError",
+                        matchEvent: "DataError",
+                        matchDescription: errorMsg,
+                        matchKey: matchData.Key,
+                        matchId: matchData.MatchId,
+                        matchPlayerId: playerID,
+                        exception: new InvalidDataException(errorMsg)
+                        )
+                    );
             }
 
             var newPlayer = new PlayerInfo {
                 EndPoint = remote,
                 MatchId = matchData.MatchId,
-                PlayerIndex = payload.PlayerData.PlayerIndex,
+                PlayerIndex = payloadIndex,
+                PlayerId = playerID,
+                PlayerName = playerName,
+                PlayerCharacter = playerCharacter,
                 IsSpectator = payload.PlayerData.PlayerIndex == 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
@@ -363,7 +490,18 @@ namespace OVS.Rollback.Core
             match.Players[key] = newPlayer;
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
-            Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, matchData.MatchId);
+            Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, newPlayer.PlayerId, newPlayer.PlayerName, newPlayer.PlayerCharacter, matchData.MatchId);
+            _ = Events.SendPlayerConnectEvent(this, StatusEventArgs.CreateNew(
+                    description: "PlayerConnect",
+                    matchEvent: "PlayerConnect",
+                    matchDescription: $"Player {newPlayer.PlayerId} (name: {newPlayer.PlayerName}, character: {newPlayer.PlayerCharacter}) joined match {newPlayer.MatchId} at PlayerIndex {newPlayer.PlayerIndex}. Spectator: {newPlayer.IsSpectator}",
+                    matchKey: match.Key,
+                    matchId: match.MatchId,
+                    matchNumPlayers: match.Players.Count,
+                    matchPlayerId: newPlayer.PlayerId,
+                    matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                    )
+                );
 
             var reply = new NewConnectionReplyPayload {
                 Success = 0,
@@ -379,7 +517,6 @@ namespace OVS.Rollback.Core
                 StartPingPhase(match);
             }
 
-
             return newPlayer;
         }
 
@@ -393,10 +530,20 @@ namespace OVS.Rollback.Core
 
 
             Log.PingPhaseStarted(_logger, match.MatchId);
+            _ = Events.SendPingPhaseEvent(this, StatusEventArgs.CreateNew(
+                    description: "PingPhaseStarted",
+                    matchEvent: "PingPhaseStarted",
+                    matchDescription: $"Ping phase started for match {match.MatchId} with {match.Players.Count} players.",
+                    matchKey: match.Key,
+                    matchId: match.MatchId,
+                    matchNumPlayers: match.Players.Count,
+                    matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                    )
+                );
 
             uint count = 0;
-            System.Threading.Timer? timer = null;
-            timer = new System.Threading.Timer(_ => {
+            Timer? timer = null;
+            timer = new Timer(_ => {
                 if (count >= config.PingPhase.TotalPings || !_running)
                 {
                     timer?.Dispose();
@@ -412,7 +559,6 @@ namespace OVS.Rollback.Core
             match.PingPhaseTimer = timer;
 
         }
-
         private void BroadcastRequestQuality(MatchState match)
         {
             long ts = Stopwatch.GetTimestamp();
@@ -427,14 +573,22 @@ namespace OVS.Rollback.Core
         }
         private void BroadcastPlayersConfiguration(MatchState match)
         {
-            ReadOnlySpan<ushort> mapping = stackalloc ushort[] { 0, 256, 513, 769 };
-            int count = 0;
-            foreach (var _ in match.Players) count++;
+            //ReadOnlySpan<ushort> mapping = [0, 256, 513, 769];
+            ReadOnlySpan<ushort> mapping = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
+            //int count = match.Players.Count;
+
+            //ushort[] mappingArray = new ushort[match.Players.Count];
+            //for (int i = 0; i < match.Players.Count; i++)
+            //{
+            //    mappingArray[i] = (ushort)((i % 4) * 256);
+            //}
+            //ReadOnlySpan<ushort> mapping = mappingArray;
+
+            //foreach (var _ in match.Players) count++;
 
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
-                //if (player.IsSpectator || player.Disconnected)
                 if (player.Disconnected)
                 {
                     continue;
@@ -442,10 +596,15 @@ namespace OVS.Rollback.Core
 
                 var configValues = new List<ushort>(match.MaxPlayers);
                 for (int i = 0; i < match.MaxPlayers; i++)
-                    configValues.Add(mapping[i % 4]);
+                {
+                    //configValues.Add(mapping[i]);
+                    configValues.Add(mapping[i % (configValues.Capacity + 1)]);
+                }
+                //configValues.Add(mapping[i % 4]);
 
                 var payload = new PlayersConfigurationDataPayload {
-                    NumPlayers = (byte)count,
+                    //NumPlayers = (byte)count,
+                    NumPlayers = (byte)match.Players.Count,
                     ConfigValues = configValues
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
@@ -520,13 +679,34 @@ namespace OVS.Rollback.Core
                     SendServerMessage(match, kvp.Value, ServerMessageType.StartGame, null);
                 }
 
+                _ = Events.SendAllPlayersReadyEvent(this, StatusEventArgs.CreateNew(
+                        description: "AllPlayersReady",
+                        matchEvent: "AllPlayersReady",
+                        matchDescription: $"All players are ready in match {match.MatchId}. Starting game.",
+                        matchKey: match.Key,
+                        matchId: match.MatchId,
+                        matchNumPlayers: match.Players.Count,
+                        matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                        )
+                    );
+
                 if (!match.IsTickRunning)
                 {
                     StartTickLoop(match);
                 }
+
+                _ = Events.SendMatchStartEvent(this, StatusEventArgs.CreateNew(
+                        description: "MatchStarted",
+                        matchEvent: "MatchStarted",
+                        matchDescription: $"Match {match.MatchId} started with {match.Players.Count} players.",
+                        matchKey: match.Key,
+                        matchId: match.MatchId,
+                        matchNumPlayers: match.Players.Count,
+                        matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                        )
+                    );
             }
         }
-
 
         private void HandleClientInput(MatchState match, PlayerInfo player, InputPayload payload)
         {
@@ -534,8 +714,6 @@ namespace OVS.Rollback.Core
             {
                 return; // Spectators don't send inputssf
             }
-            var config = ServerConfiguration.Instance;
-
 
             lock (player.Lock)
             {
@@ -670,7 +848,9 @@ namespace OVS.Rollback.Core
 
             // Track when we're making significant corrections
             if (MathF.Abs(riftError) > 1.0f)
+            {
                 ServerMetrics.RiftCorrections.Add(1);
+            }
 
             if (player.SmoothRift > 1 || player.SmoothRift < -1 || player.SmoothedPing > 254)
             {
@@ -734,6 +914,12 @@ namespace OVS.Rollback.Core
                     Stopwatch.Frequency / 1_000_000.0);
             }
 
+            _logger.LogInformation(
+                "Starting tick loop for match {MatchId} with target interval {Interval} ms, " +
+                "spin threshold {SpinThreshold} μs (spinThreshold: {spinThreshold}), adaptive spin: {AdaptiveSpin}",
+                match.MatchId, match.TickIntervalMs, spinThreshold * 1_000_000.0 / Stopwatch.Frequency, spinThreshold,
+                config.Performance.UseAdaptiveSpinThreshold);
+
             int perfCount = 0;
             long perfStart = Stopwatch.GetTimestamp();
 
@@ -761,8 +947,19 @@ namespace OVS.Rollback.Core
 
                 if (allDisconnected && match.Players.Count > 0)
                 {
-                    _ = SendEndMatchAsync(match.MatchId, match.Key);
+                    _ = _httpHelper.SendEndMatchAsync(match.MatchId, match.Key);
                     match.StopTick();
+
+                    _ = Events.SendAllPlayersDisconnectedEvent(this, StatusEventArgs.CreateNew(
+                            description: "AllPlayersDisconnected",
+                            matchEvent: "AllPlayersDisconnected",
+                            matchDescription: $"All players disconnected in match {match.MatchId}. Ending match.",
+                            matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
+                            matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                            )
+                        );
 
                     foreach (var kvp in match.Players)
                         _players.TryRemove(kvp.Key, out _);
@@ -771,6 +968,17 @@ namespace OVS.Rollback.Core
                     _matches.TryRemove(match.MatchId, out _);
                     ServerMetrics.MatchesEnded.Add(1);
                     Log.MatchCleanedUp(_logger, match.MatchId);
+                    _ = Events.SendMatchEndEvent(this, StatusEventArgs.CreateNew(
+                            description: "MatchEnded",
+                            matchEvent: "MatchEnded",
+                            matchDescription: $"Match {match.MatchId} ended and cleaned up after all players disconnected.",
+                            matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
+                            matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                            )
+                        );
+
                     break;
                 }
 
@@ -841,6 +1049,17 @@ namespace OVS.Rollback.Core
                     Log.TickPerformance(_logger, avgUs);
                     perfCount = 0;
                     perfStart = Stopwatch.GetTimestamp();
+
+                    _ = Events.SendTickPerformanceEvent(this, StatusEventArgs.CreateNew(
+                            description: "TickPerformance",
+                            matchEvent: "TickPerformance",
+                            matchDescription: $"Average tick interval for matchID {match.MatchId}: {avgUs:F0} μs.",
+                            matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
+                            matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
+                            )
+                        );
                 }
             }
         }
@@ -881,6 +1100,17 @@ namespace OVS.Rollback.Core
                         player.Disconnected = true;
                         ServerMetrics.PlayersDisconnected.Add(1);
                         Log.PlayerTimedOut(_logger, player.PlayerIndex, player.MatchId, DisconnectTimeout);
+                        _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
+                                description: "PlayerTimeout",
+                                matchEvent: "PlayerDisconnect",
+                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} timed out and was disconnected from match {player.MatchId} after {DisconnectTimeout} seconds without input.",
+                                matchKey: match.Key,
+                                matchId: match.MatchId,
+                                matchNumPlayers: match.Players.Count,
+                                matchPlayerId: player.PlayerId,
+                                matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)]
+                                )
+                            );
                         continue;
                     }
                     if (player.Disconnected) continue;
@@ -1066,7 +1296,28 @@ namespace OVS.Rollback.Core
                 catch (SocketException ex)
                 {
                     Log.SendFailed(_logger, player.PlayerIndex, player.MatchId, ex);
+                    _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
+                            description: "SendFailed",
+                            matchEvent: "ErrorInputSendFailed",
+                            matchDescription: $"Failed to send input message to Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} in match {player.MatchId}: {ex.Message}",
+                            matchKey: match.Key,
+                            matchPlayerId: player.PlayerId,
+                            exception: ex
+                            )
+                        );
                     player.Disconnected = true;
+                    _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
+                            description: "PlayerDisconnect",
+                            matchEvent: "ErrorPlayerDisconnect",
+                            matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
+                            matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
+                            matchPlayerId: player.PlayerId,
+                            matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
+                            exception: ex
+                            )
+                        );
                     return;
                 }
             }
@@ -1113,218 +1364,35 @@ namespace OVS.Rollback.Core
                 }
                 catch (SocketException ex)
                 {
+                    _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
+                            description: "SendFailed",
+                            matchEvent: "ErrorServerSendFailed",
+                            matchDescription: $"Failed to send server message to Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} in match {player.MatchId}: {ex.Message}",
+                            matchKey: match.Key,
+                            matchPlayerId: player.PlayerId,
+                            exception: ex
+                            )
+                        );
                     _logger.LogError("Send failed to player {Index}: {Err}",
                         player.PlayerIndex, ex.Message);
                     player.Disconnected = true;
+                    _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
+                            description: "PlayerDisconnect",
+                            matchEvent: "ErrorPlayerDisconnect",
+                            matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
+                            matchKey: match.Key,
+                            matchId: match.MatchId,
+                            matchNumPlayers: match.Players.Count,
+                            matchPlayerId: player.PlayerId,
+                            matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
+                            exception: ex
+                            )
+                        );
                     return 0;
                 }
             }
 
-
             return header.Sequence;
-        }
-
-
-        // ═══════════════════════════════════════════
-        //  HTTP Integration (unchanged logic)
-        // ═══════════════════════════════════════════
-
-        private async Task<OVSMatchConfig?> FetchMatchConfigAsync(string matchId, string key)
-        {
-            string path = IsOVS ? Endpoints.OVSRegister : Endpoints.MVSIRegister;
-            string url = BaseUrl + path;
-
-            var requestBody = new { matchId, key, hostname = Utilities.Hostname };
-            var json = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            try
-            {
-                var response = await _httpClient.PostAsync(url, content);
-                var body = await response.Content.ReadAsStringAsync();
-                return JsonSerializer.Deserialize<OVSMatchConfig>(body);
-            }
-            catch (Exception ex)
-            {
-                Log.FetchConfigFailed(_logger, matchId, ex);
-                return null;
-            }
-        }
-
-        private async Task SendEndMatchAsync(string matchId, string key)
-        {
-            string path = IsOVS ? Endpoints.OVSEndMatch : Endpoints.MVSIEndMatch;
-            string url = BaseUrl + path;
-
-            var requestBody = new { matchId, key, hostname = Utilities.Hostname };
-            var json = JsonSerializer.Serialize(requestBody);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            try
-            {
-                await _httpClient.PostAsync(url, content);
-                Log.MatchEnded(_logger, matchId, url);
-            }
-            catch (Exception ex)
-            {
-                Log.EndMatchFailed(_logger, url, ex);
-            }
-        }
-
-        // ═══════════════════════════════════════════
-        //  Configuration
-        // ═══════════════════════════════════════════
-
-        private string GetBaseUrlFromEnv()
-        {
-            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? "";
-            IsOVS = !string.IsNullOrEmpty(url);
-
-            if (string.IsNullOrEmpty(url))
-            {
-                IsOVS = false;
-                Log.OVSNotSet(_logger);
-                url = Environment.GetEnvironmentVariable("mvsi_server") ?? "";
-                IsMVSI = !string.IsNullOrEmpty(url);
-            }
-
-            if (!string.IsNullOrEmpty(url) && url.EndsWith('/'))
-                return url[..^1];
-
-            if (!IsOVS && !IsMVSI)
-                Log.NoServerConfigured(_logger);
-
-            return url;
-        }
-
-
-        public static partial class Log
-        {
-            // ── Server Lifecycle ──
-
-            [LoggerMessage(EventId = 1000, Level = LogLevel.Information,
-                Message = "Listening on UDP port {Port}")]
-            public static partial void Listening(ILogger logger, ushort port);
-
-            [LoggerMessage(EventId = 1001, Level = LogLevel.Information,
-                Message = "OVS server started ({ServerType} on port: {port})")]
-            public static partial void ServerStarted(ILogger logger, string serverType, ushort port);
-
-            [LoggerMessage(EventId = 1002, Level = LogLevel.Information,
-                Message = "OVS server stopped")]
-            public static partial void ServerStopped(ILogger logger);
-
-            [LoggerMessage(EventId = 1003, Level = LogLevel.Information,
-                Message = "Server running. Press Ctrl+C to stop.")]
-            public static partial void ServerRunning(ILogger logger);
-
-            [LoggerMessage(EventId = 1004, Level = LogLevel.Information,
-                Message = "Shutting down server...")]
-            public static partial void ShuttingDown(ILogger logger);
-
-            [LoggerMessage(EventId = 1005, Level = LogLevel.Information,
-                Message = "Match data endpoint: {baseURL}")]
-            public static partial void MatchEndpoint(ILogger logger, string baseURL);
-
-            // ── Match Lifecycle ──
-
-            [LoggerMessage(EventId = 1100, Level = LogLevel.Information,
-                Message = "New Match: {MatchId}")]
-            public static partial void NewMatch(ILogger logger, string matchId);
-
-            [LoggerMessage(EventId = 1101, Level = LogLevel.Information,
-                Message = "Match {MatchId} cleaned up (all players disconnected)")]
-            public static partial void MatchCleanedUp(ILogger logger, string matchId);
-
-            [LoggerMessage(EventId = 1102, Level = LogLevel.Information,
-                Message = "Sent end match notice for Match ID {matchID} to URL: {url}")]
-            public static partial void MatchEnded(ILogger logger, string matchId, string url);
-
-            // ── Player Lifecycle ──
-
-            [LoggerMessage(EventId = 1200, Level = LogLevel.Information,
-                Message = "Player {PlayerIndex} joined match {matchID}")]
-            public static partial void PlayerJoined(ILogger logger, ushort playerIndex, string matchID);
-
-            [LoggerMessage(EventId = 1201, Level = LogLevel.Information,
-                Message = "Player index {PlayerIndex} for matchID {matchID} timed out (no input for {Timeout}s)")]
-            public static partial void PlayerTimedOut(ILogger logger, ushort playerIndex, string matchID, int timeout);
-
-            [LoggerMessage(EventId = 1202, Level = LogLevel.Information,
-                Message = "Player index {PlayerIndex} sent Disconnecting message for Match ID: {matchID}")]
-            public static partial void PlayerDisconnecting(ILogger logger, ushort playerIndex, string matchID);
-
-            // ── Ping Phase ──
-
-            [LoggerMessage(EventId = 1300, Level = LogLevel.Information,
-                Message = "Starting ping phase for Match ID: {matchID}")]
-            public static partial void PingPhaseStarted(ILogger logger, string matchID);
-
-            [LoggerMessage(EventId = 1301, Level = LogLevel.Information,
-                Message = "Broadcasting players configuration for match {matchID}")]
-            public static partial void BroadcastingPlayersConfig(ILogger logger, string matchID);
-
-            // ── Rift ──
-
-            [LoggerMessage(EventId = 1400, Level = LogLevel.Information,
-                Message = "MatchID: {matchID} PIndex:{PlayerIndex} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
-            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex,
-                short ping, float smoothRift, float rawRift, float clientFrame, uint serverFrame);
-
-            // ── Tick Performance ──
-
-            [LoggerMessage(EventId = 1500, Level = LogLevel.Information,
-                Message = "Average tick interval: {AvgUs:F0} μs")]
-            public static partial void TickPerformance(ILogger logger, double AvgUs);
-
-            // ── Warnings ──
-
-            [LoggerMessage(EventId = 2000, Level = LogLevel.Warning,
-                Message = "DESYNC at frame {Frame}: player {PlayerA}={ChecksumA} vs player {PlayerB}={ChecksumB}")]
-            public static partial void DesyncDetected(ILogger logger, uint frame,
-                ushort playerA, string checksumA, ushort playerB, string checksumB);
-
-            [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
-                Message = "Bit-packing fallback: {Reason}")]
-            public static partial void BitPackingFallback(ILogger logger, string reason);
-
-            [LoggerMessage(EventId = 2002, Level = LogLevel.Warning,
-                Message = "OVS_SERVER not set, checking mvsi_server")]
-            public static partial void OVSNotSet(ILogger logger);
-
-            [LoggerMessage(EventId = 2003, Level = LogLevel.Warning,
-                Message = "Neither OVS_SERVER nor mvsi_server set")]
-            public static partial void NoServerConfigured(ILogger logger);
-
-            // ── Errors ──
-
-            [LoggerMessage(EventId = 3000, Level = LogLevel.Error,
-                Message = "UDP receive error: ")]
-            public static partial void ReceiveError(ILogger logger, Exception exception);
-
-            [LoggerMessage(EventId = 3001, Level = LogLevel.Error,
-                Message = "Error handling message: ")]
-            public static partial void HandleError(ILogger logger, Exception exception);
-
-            [LoggerMessage(EventId = 3002, Level = LogLevel.Error,
-                Message = "Send failed to player {PlayerIndex} for MatchID {matchID}: ")]
-            public static partial void SendFailed(ILogger logger, ushort playerIndex, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3003, Level = LogLevel.Error,
-                Message = "Failed to fetch match config for match: {matchID}")]
-            public static partial void FetchConfigFailed(ILogger logger, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3004, Level = LogLevel.Error,
-                Message = "Ping phase error for Match ID {matchID}: ")]
-            public static partial void PingPhaseError(ILogger logger, string matchID, Exception exception);
-
-            [LoggerMessage(EventId = 3005, Level = LogLevel.Error,
-                Message = "Failed to POST end-match to {Url}, exception: ")]
-            public static partial void EndMatchFailed(ILogger logger, string url, Exception exception);
-
-            [LoggerMessage(EventId = 3006, Level = LogLevel.Error,
-                Message = "Invalid JSON from {Path}")]
-            public static partial void InvalidJson(ILogger logger, string path);
         }
     }
 }

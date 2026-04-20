@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using OVS;
 using OVS.Rollback.Core;
+using OVS.Rollback.Models;
 using OVS.Rollback.Utils;
 using OVS.Rollback.Configuration;
 using System;
@@ -15,20 +16,39 @@ namespace OVS.Rollback
     public class Server
     {
         private static readonly ILogger<Server> logger = Utilities.NewLogger<Server>();
+        internal static readonly HTTPHelper HttpHelper = new HTTPHelper(logger);
         protected internal static CancellationTokenSource cts = new CancellationTokenSource();
+        private static readonly System.Diagnostics.Stopwatch _runTimer = new();
+
+        // If true, the server will self-destruct after the first match ends
+        // If you plan to have long-running, non-ephemeral servers, set this to false and ensure you have a proper cleanup strategy in place to stop the server when it's no longer needed
+        // Official OpenVersus servers are auto-provisioned/deprovisioned on-demand per game, so this is a (redundant) safety measure to prevent orphaned servers from running indefinitely
+        // The primary method is a cleanup script scheduled via atd as part of the provisioning process, but this is an extra "just in case" measure
+        protected internal static bool MementoMori = false;
+        protected internal static System.Diagnostics.Stopwatch RunTimer { get => _runTimer; }
         public static readonly string LogPrefix = Utilities.LogPrefix;
 
         public static async Task<int> Main(string[] args)
         {
+            RunTimer.Start();
+
             // ═══════════════════════════════════════════
             //  Initialize Configuration
             // ═══════════════════════════════════════════
+
             logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
             
             // Allow config file path override from command line
             string? configPath = args.Length > 0 && args[0].EndsWith(".json") ? args[0] : null;
             ServerConfiguration.Initialize(logger, configPath);
             var config = ServerConfiguration.Instance;
+            MementoMori = config.Server.MementoMori;
+
+            RegisterMatchEvents();
+
+            logger.LogInformation("{LogPrefix} Server is alive, starting heartbeat loop...", LogPrefix);
+            HeartBeat pacemaker = new HeartBeat();
+            _ = pacemaker.StartLoop();
 
             // Command-line args override config (for backwards compatibility)
             ushort port = config.Server.Port;
@@ -49,14 +69,14 @@ namespace OVS.Rollback
 
             if (args.Length > 1)
             {
-                if (int.TryParse(args[1], out var mp) && mp is > 0 and <= 4)
+                if (int.TryParse(args[1], out var mp) && mp is > 0 and <= 8)
                 {
                     maxPlayers = mp;
                     logger.LogInformation("{LogPrefix} MaxPlayers overridden by command line: {MaxPlayers}", LogPrefix, maxPlayers);
                 }
                 else
                 {
-                    logger.LogWarning("{LogPrefix} Max players must be between 1 and 4. Using config: {MaxPlayers}", LogPrefix, maxPlayers);
+                    logger.LogWarning("{LogPrefix} Max players must be between 1 and 8. Using config: {MaxPlayers}", LogPrefix, maxPlayers);
                 }
             }
 
@@ -64,10 +84,10 @@ namespace OVS.Rollback
             //  Setup OpenTelemetry Metrics
             // ═══════════════════════════════════════════
             MeterProvider? meterProvider = null;
-            if (config.Logging.EnableMetrics)
+            if (config.Logging.EnableMetrics)   
             {
                 string defaultMeterName = "OVS.Rollback.Server";
-                StringBuilder logEntry = new StringBuilder("{LogPrefix} Metrics enabled");
+                StringBuilder logEntry = new($"{LogPrefix} Metrics enabled");
 
                 if (config.Logging.EnableConsoleMetrics)
                 {
@@ -111,6 +131,7 @@ namespace OVS.Rollback
                 },
                 onShutdown: () =>
                 {
+                    pacemaker.StopLoop().Wait();
                     cts.Cancel();
                 });
 
@@ -167,11 +188,41 @@ namespace OVS.Rollback
             }
             finally
             {
+                logger.LogInformation("{LogPrefix} Server stopped. Cleaning up resources...", LogPrefix);
                 meterProvider?.Dispose();
                 SignalHandler.Dispose();
+                logger.LogInformation("{LogPrefix} Total runtime was: {runTime}s", LogPrefix, (RunTimer.ElapsedMilliseconds / 1000));
+                RunTimer.Stop();
             }
 
             return 0;
+        }
+
+        private static void RegisterMatchEvents()
+        {
+            Events.OnServerStart               +=    HttpHelper.SendMatchStatus;
+            Events.OnServerStop                +=    HttpHelper.SendMatchStatus;
+            Events.OnServerListening           +=    HttpHelper.SendMatchStatus;
+            Events.OnHeartBeat                 +=    HttpHelper.SendMatchStatus;
+            Events.OnConfigReceived            +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerConnect             +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerDisconnect          +=    HttpHelper.SendMatchStatus;
+            Events.OnAllPlayesrDisconnected    +=    HttpHelper.SendMatchStatus;
+            Events.OnPlayerReady               +=    HttpHelper.SendMatchStatus;
+            Events.OnAllPlayersReady           +=    HttpHelper.SendMatchStatus;
+            Events.OnRageQuit                  +=    HttpHelper.SendMatchStatus;
+            Events.OnPingPhase                 +=    HttpHelper.SendMatchStatus;
+            Events.OnTickPerformance           +=    HttpHelper.SendMatchStatus;
+            Events.OnMatchStart                +=    HttpHelper.SendMatchStatus;
+            Events.OnMatchEnd                  +=    HttpHelper.SendMatchStatus;
+            Events.OnError                     +=    HttpHelper.SendMatchStatus;
+            Events.OnTerminatingError          +=    HttpHelper.SendMatchStatus;
+            Events.OnServerIdle                +=    HttpHelper.SendMatchStatus;
+            Events.OnMementoMori               +=    HttpHelper.SendMatchStatus;
+            //Events.OnMementoMori += (_) => {
+            //    SignalSender.MementoMori();
+            //    return Task.FromResult(default(MatchStatusResponse)!);
+            //};
         }
     }
 }

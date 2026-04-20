@@ -79,7 +79,7 @@ namespace OVS.Rollback.Core
             Payload.NumZeroedOverrides = 0;
             Payload.NumPlayers = 0;
             Payload.Ping = 0;
-            Payload.PacketsLossPercent = 0;
+            Payload.PacketLossPercent = 0;
             Payload.Rift = 0f;
             Payload.ChecksumAckFrame = 0;
             Array.Clear(AckedFrames, 0, MaxPlayers);
