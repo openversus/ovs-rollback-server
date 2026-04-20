@@ -89,15 +89,27 @@ namespace OVS.Rollback
                 onShutdown: () =>
                 {
                     pacemaker.StopLoop().Wait();
-                    cts.Cancel();
+                    if (!cts.IsCancellationRequested)
+                    {
+                        cts.Cancel();
+                    }
                 });
 
             Console.CancelKeyPress += (_, token) => {
                 token.Cancel = true;
-                cts.Cancel();
+
+                if (!cts.IsCancellationRequested)
+                {
+                    cts.Cancel();
+                }
             };
 
-            AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => {
+                if (!cts.IsCancellationRequested)
+                {
+                    cts.Cancel();
+                }
+            };
 
             // ═══════════════════════════════════════════
             //  Start Server
