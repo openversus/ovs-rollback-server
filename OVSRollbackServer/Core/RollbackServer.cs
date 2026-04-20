@@ -60,7 +60,8 @@ namespace OVS.Rollback.Core
             int maxPlayers = Constants.MaxPlayers)
         {
             _logger = logger;
-            _httpHelper = new HTTPHelper(_logger);
+            //_httpHelper = new HTTPHelper(_logger);
+            _httpHelper = Singletons.SharedHTTPHelper;
             _port = port;
             _maxPlayers = maxPlayers;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);

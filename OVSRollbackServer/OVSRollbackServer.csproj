@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>OVS.Rollback</RootNamespace>
+    <RootNamespace>Rollback</RootNamespace>
     <AssemblyName>OVS.Rollback.Server</AssemblyName>
     <!-- Server GC: dedicated GC threads, shorter pauses under allocation pressure -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
@@ -17,13 +17,44 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup Label="PackageReferences">
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.5" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
     <!-- OpenTelemetry for metrics export -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenTelemetry" Version="1.15.2" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.2" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.2" />
+
+    <!-- Microsoft.Extensions for hosting and logging -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
+
+    <!-- Serilog for structured logging -->
+    <PackageReference Include="Serilog" Version="4.3.1" />
+    <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
+    <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
+    <PackageReference Include="Serilog.Exceptions" Version="8.4.0" />
+    <PackageReference Include="Serilog.Expressions" Version="5.0.0" />
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
+    <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
+    <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
+    <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.0" />
+    <PackageReference Include="Serilog.Sinks.Async" Version="2.1.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+    <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="Serilog.Sinks.Map" Version="2.0.0" />
+    <PackageReference Include="Serilog.Sinks.TextWriter" Version="3.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="Configuration\Logging\Runtime\serilog-config.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>
+

@@ -1,12 +1,15 @@
 // Utilities.cs
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Common;
+using OVS.Rollback.Configuration;
+using OVS.Rollback.Utils;
+using Serilog.Extensions.Logging;
 using System;
-using System.Text;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
+using System.Text;
 using static OVS.Rollback.Core.LoggerTemplates;
-using OVS.Rollback.Common;
-using OVS.Rollback.Utils;
 
 namespace OVS.Rollback
 {
@@ -148,16 +151,22 @@ namespace OVS.Rollback
 
         public static ILogger<T> NewLogger<T>() where T : class
         {
-            var loggerFactory = LoggerFactory.Create(builder => {
-                builder
-                    .SetMinimumLevel(LogLevel.Debug)
-                    .AddSimpleConsole(opts => {
-                        opts.TimestampFormat = "HH:mm:ss.fff ";
-                        opts.SingleLine = true;
-                        opts.IncludeScopes = false;
-                    });
-            });
-            return loggerFactory.CreateLogger<T>();
+            return new SerilogLoggerFactory().CreateLogger<T>();
+
+            //var sharedLoggerFactory = Singletons.SharedLoggerFactory;
+            //return sharedLoggerFactory.CreateLogger<T>();
+
+
+            //var loggerFactory = LoggerFactory.Create(builder => {
+            //    builder
+            //        .SetMinimumLevel(LogLevel.Debug)
+            //        .AddSimpleConsole(opts => {
+            //            opts.TimestampFormat = "HH:mm:ss.fff ";
+            //            opts.SingleLine = true;
+            //            opts.IncludeScopes = false;
+            //        });
+            //});
+            //return loggerFactory.CreateLogger<T>();
         }
 
         public static T CreateHMAC<T>(byte[] key, string message, HMACType type, HMACHashAlgorithm algo = HMACHashAlgorithm.SHA1) where T : class
@@ -209,6 +218,35 @@ namespace OVS.Rollback
         public static T CreateHMAC<T>(string key, string message, HMACType type) where T : class
         {
             return CreateHMAC<T>(Encoding.UTF8.GetBytes(key), message, type);
+        }
+
+        /// <summary>
+        /// Retrieves a required service of the specified type from the application's DI Container.
+        /// </summary>
+        /// <remarks>This method throws an exception if the requested service type is not
+        /// registered in the dependency injection container. Use this method when the service is expected to be
+        /// available and its absence should be treated as an error.</remarks>
+        /// <typeparam name="TType">The type of the service to retrieve. Must be a reference type.</typeparam>
+        /// <returns>An instance of the specified service type if it is registered; otherwise, throws an exception.</returns>
+        public static dynamic? GetRequiredService<TType>() where TType : class
+        {
+            return Singletons.RollbackDIContainer?.GenericHost?.Services.GetRequiredService<TType>();
+        }
+
+        /// <summary>
+        /// Retrieves a required service of the specified type from the application's DI Container.
+        /// </summary>
+        /// <remarks>This method relies on the application's dependency injection container being
+        /// initialized. If the service of type <typeparamref name="TType"/> is not registered, an exception will be
+        /// thrown. Use this method when the service is required and its absence should be treated as an
+        /// error.</remarks>
+        /// <typeparam name="TType">The type of the service to retrieve. Must be a reference type.</typeparam>
+        /// <param name="type">An instance of the type used to specify the service to retrieve. This parameter is not used to resolve
+        /// the service and may be null.</param>
+        /// <returns>An instance of the requested service type if it is registered; otherwise, throws an exception.</returns>
+        public static dynamic? GetRequiredService<TType>(TType type) where TType : class
+        {
+            return Singletons.RollbackDIContainer?.GenericHost?.Services.GetRequiredService<TType>();
         }
     }
 }
