@@ -4,6 +4,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Common;
 
 namespace OVS.Rollback.Configuration
 {
@@ -51,11 +52,12 @@ namespace OVS.Rollback.Configuration
         /// <summary>
         /// Initialize configuration with logger
         /// </summary>
-        public static void Initialize(ILogger logger, string? configPath = null)
+        public static void Initialize(ILogger logger, string? configPath = "")
         {
             _logger = logger;
-            if (!string.IsNullOrEmpty(configPath))
-                _configPath = configPath;
+            if (configPath.NotNullOrEmpty)
+                // Null-forgiving operator is required here because apparently Roslyn is drunk
+                _configPath = configPath!;
             
             lock (_lock)
             {
@@ -214,8 +216,11 @@ namespace OVS.Rollback.Configuration
 
         private static bool GetEnvBool(string key, bool defaultValue)
         {
-            var value = Environment.GetEnvironmentVariable(key);
-            if (string.IsNullOrEmpty(value)) return defaultValue;
+            string value = Environment.GetEnvironmentVariable(key) ?? string.Empty;
+            if (value.StringIsNullOrEmpty)
+            {
+                return defaultValue;
+            }
             return value.ToLowerInvariant() is "true" or "1" or "yes" or "on";
         }
     }

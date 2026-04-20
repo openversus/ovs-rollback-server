@@ -5,6 +5,8 @@ using System.Text;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using static OVS.Rollback.Core.LoggerTemplates;
+using OVS.Rollback.Common;
+using OVS.Rollback.Utils;
 
 namespace OVS.Rollback
 {
@@ -55,22 +57,31 @@ namespace OVS.Rollback
         }
         public static string GetBaseUrlFromEnv(ILogger _logger)
         {
-            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? "";
-            _isOVS = !string.IsNullOrWhiteSpace(url);
+            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? string.Empty;
+            _isOVS = url.NotNullOrWhiteSpace;
 
-            if (string.IsNullOrWhiteSpace(url))
+            if (url.StringIsNullOrWhiteSpace)
             {
                 _isOVS = false;
                 Log.OVSNotSet(_logger);
-                url = Environment.GetEnvironmentVariable("mvsi_server") ?? "";
-                _isMVSI = !string.IsNullOrWhiteSpace(url);
+                url = Environment.GetEnvironmentVariable("mvsi_server") ?? string.Empty;
+                _isMVSI = url.NotNullOrWhiteSpace;
             }
 
-            if (!string.IsNullOrWhiteSpace(url) && url.EndsWith('/'))
+            if (url.NotNullOrWhiteSpace && url.EndsWith('/'))
+            {
                 return url[..^1];
+            }
 
             if (!_isOVS && !_isMVSI)
+            {
+                // Normally we would fire a TerminatingError event here, but since there's no server configured to
+                // receive it, that doesn't exactly make a whole hell of a lot of sense, so we'll just log it
+                // and walk into traffic
+
                 Log.NoServerConfigured(_logger);
+                SignalSender.MementoMori("Neither OVS_SERVER nor mvsi_server set");
+            }
 
             return url;
         }

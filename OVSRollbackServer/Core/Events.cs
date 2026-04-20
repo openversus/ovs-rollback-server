@@ -133,8 +133,9 @@ namespace OVS.Rollback.Core
             FireMatchStatusEvent(OnMatchEnd, sender, e);
             if (Server.MementoMori)
             {
-                SignalSender.MementoMori();
-                Server.cts.Cancel();
+                Task.Delay(30000).ContinueWith(_ => {
+                    SignalSender.MementoMori("Winding down normally after end of match");
+                });
             }
             return Task.CompletedTask;
         }

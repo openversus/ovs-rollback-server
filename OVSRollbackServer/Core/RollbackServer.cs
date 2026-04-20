@@ -1,5 +1,6 @@
 // RollbackServer.cs
 using Microsoft.Extensions.Logging;
+using OVS.Rollback.Common;
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Core;
 using OVS.Rollback.Models;
@@ -70,11 +71,11 @@ namespace OVS.Rollback.Core
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };
 
-            BaseUrl = Utilities.GetBaseUrlFromEnv(_logger);
+            BaseUrl = Utilities.GetBaseUrlFromEnv(_logger) ?? string.Empty;
             IsOVS = Utilities.IsOVS;
             IsMVSI = Utilities.IsMVSI;
 
-            if (string.IsNullOrEmpty(BaseUrl))
+            if (BaseUrl.StringIsNullOrEmpty)
             {
                 string errorMsg = "No base URL configured. Please set the OVS_SERVER environment variable.";
                 _ = Events.SendTerminatingErrorEvent(this, StatusEventArgs.CreateNew(

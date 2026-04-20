@@ -14,6 +14,7 @@ using System.Threading.Tasks;
 using OVS.Rollback.Utils;
 using static OVS.Rollback.Core.Constants;
 using static OVS.Rollback.Core.LoggerTemplates;
+using OVS.Rollback.Common;
 
 namespace OVS.Rollback.Utils
 {
@@ -100,7 +101,7 @@ namespace OVS.Rollback.Utils
             {
                 requestHeaders.Add("MatchUpdateKey", parsedMatchUpdateKey);
             }
-            else if (!string.IsNullOrWhiteSpace(requestHeaders["MatchUpdateKey"]))
+            else if (requestHeaders["MatchUpdateKey"].StringIsNullOrWhiteSpace)
             {
                 requestHeaders["MatchUpdateKey"] = parsedMatchUpdateKey;
             }
@@ -149,7 +150,7 @@ namespace OVS.Rollback.Utils
             {
                 requestHeaders.Add("MatchUpdateKey", parsedMatchUpdateKey);
             }
-            else if (!string.IsNullOrWhiteSpace(requestHeaders["MatchUpdateKey"]))
+            else if (requestHeaders["MatchUpdateKey"].StringIsNullOrWhiteSpace)
             {
                 requestHeaders["MatchUpdateKey"] = parsedMatchUpdateKey;
             }

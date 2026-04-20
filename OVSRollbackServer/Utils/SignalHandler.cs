@@ -254,5 +254,11 @@ namespace OVS.Rollback.Utils
             _logger?.LogInformation("Memento Mori: Server has been alive for over 8.5 minutes. Shutting down...");
             Send(null, UnixSignals.SIGINT);
         }
+
+        internal static void MementoMori(string? shutdownReason = "")
+        {
+            _logger?.LogInformation("Memento Mori: {shutdownReason} Shutting down...", shutdownReason);
+            Send(null, UnixSignals.SIGINT);
+        }
     }
 }
