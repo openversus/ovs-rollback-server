@@ -899,6 +899,8 @@ namespace OVS.Rollback.Core
             long nextTickTime = startTime + targetIntervalTicks;
             long accumulatedError = 0;
 
+            _logger.LogInformation("Stopwatch raw frequency resolution is: {Frequency}", Stopwatch.Frequency);
+
             // Get spin threshold from configuration
             long spinThreshold;
             if (config.Performance.UseAdaptiveSpinThreshold)
