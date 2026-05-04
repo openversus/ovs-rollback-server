@@ -26,6 +26,9 @@ namespace OVS.Rollback.Models
 
         [JsonPropertyName("is_spectator")]
         public bool IsSpectator { get; set; } = false;
+
+        [JsonPropertyName("is_bot")]
+        public bool IsBot { get; set; } = false;
     }
 
     public class OVSMatchConfig
@@ -59,5 +62,18 @@ namespace OVS.Rollback.Models
             }
         }
         public int ActualPlayers => Players.Count - NumSpectators;
+
+        public int NumBots
+        {
+            get {
+                if (null == Players || Players.Count == 0) return 0;
+                int count = 0;
+                foreach (var player in Players)
+                {
+                    if (player.IsBot) count++;
+                }
+                return count;
+            }
+        }
     }
 }

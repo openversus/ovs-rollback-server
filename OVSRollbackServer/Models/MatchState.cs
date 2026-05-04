@@ -44,6 +44,12 @@ namespace OVS.Rollback.Models
 
         public int ActualPlayers => Players.Count - NumSpectators;
 
+        // ── Bots: filled in from match config at /ovs_register time. Bots
+        //    occupy PlayerIndex slots but never UDP-connect, so we exclude
+        //    them from ready-checks and from input-buffering iteration.
+        public int NumBots { get; set; }
+        public HashSet<int> BotIndices { get; set; } = new();
+
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];
 
