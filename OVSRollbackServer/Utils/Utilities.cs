@@ -81,7 +81,7 @@ namespace OVS.Rollback
                 }
             }
 
-            if (!useTempFile && LogFile.StringIsNullOrWhiteSpace)
+            if (!useTempFile)
             {
                 LogFile = Path.Combine(LogDir, LogFilename);
             }
