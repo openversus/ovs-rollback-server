@@ -27,7 +27,9 @@ RUN apt update -y \
  && apt install wget -y \
  && wget 'https://aka.ms/dotnet-counters/linux-x64' -O /usr/sbin/dotnet-counters \
  && chmod ug+x /usr/sbin/dotnet-counters \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir /tmp/rollback_logs \
+ && chown 1654:1654 /tmp/rollback_logs
 
 # This stage is used in production or when running from VS in regular mode (Default when not using the Debug configuration)
 FROM base AS final
@@ -44,6 +46,21 @@ COPY --from=publish /app/publish .
 COPY --from=publish /usr/sbin/dotnet-counters /usr/sbin/
 COPY ./OVSRollbackServer/appsettings.json /app/appsettings.json
 
-ARG OVS_SERVER=http://testing.openversus.org:8000
+ARG OVS_SERVER=https://prod.openversus.org/
 ENV OVS_SERVER=${OVS_SERVER}
+
+# If desired, set the value of MATCH_UPDATE_KEY below as a default to be overridden by the value in appsettings.json
+#ARG MATCH_UPDATE_KEY=DockerMisconfiguredMatchUpdateKey
+#ENV Server__MatchUpdateKey=${MATCH_UPDATE_KEY}
+
+# If desired, set the value of LOG_ARCHIVE_PATH below if the logfile should be renamed with the MatchID, port, and time of the match
+# and moved to another location. The expected value is a directory.
+#
+# If not set, the rollback server will default to:
+#  Windows: $env:APPDATA\openversus\rollback-server
+#  Linux/Unices: $HOME/openversus/rollback-server
+#
+#ARG LOG_ARCHIVE_PATH=/tmp/rollback_logs
+#ENV Logging__LogArchivePath=${LOG_ARCHIVE_PATH}
+
 ENTRYPOINT ["dotnet", "OVS.Rollback.Server.dll"]

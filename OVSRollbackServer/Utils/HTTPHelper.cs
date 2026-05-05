@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Core;
 using OVS.Rollback.Models;
@@ -20,8 +21,9 @@ namespace OVS.Rollback.Utils
 {
     internal class HTTPHelper
     {
-        private readonly HttpClient _httpClient;
-        private readonly ILogger _logger = Utilities.NewLogger<HTTPHelper>();
+        private HttpClient _httpClient => Singletons.SharedHTTPClient;
+        //private readonly ILogger _logger = Utilities.NewLogger<HTTPHelper>();
+        private readonly ILogger<HTTPHelper> _logger;
         private string? _baseURL;
         private static readonly string LogPrefix = Utilities.GetLogPrefix<HTTPHelper>();
 
@@ -47,43 +49,46 @@ namespace OVS.Rollback.Utils
         public string MatchStatusPath { get => Endpoints.OVSMatchStatus; }
         public string MatchStatusURL { get => BaseUrl + MatchStatusPath; }
 
-        private ServerConfiguration Config { get => ServerConfiguration.Instance; }
+        private ServerConfiguration Config { get => Singletons.Config; }
 
         private string parsedMatchUpdateKey { get => Config.Server.MatchUpdateKey ?? "MisconfiguredMatchUpdateKey"; }
 
         public bool BeVerbose { get => Config.Server.VerboseLogging; }
 
-        public HTTPHelper()
-        {
-            _httpClient = new HttpClient {
-                Timeout = TimeSpan.FromSeconds(Config.Networking.HttpTimeoutSeconds)
-            };
-            _logger = Utilities.NewLogger<HTTPHelper>();
-            Init();
-        }
 
-        public HTTPHelper(ILogger logger)
+        public HTTPHelper(ILogger<HTTPHelper> logger)
         {
-            _httpClient = new HttpClient {
-                Timeout = TimeSpan.FromSeconds(Config.Networking.HttpTimeoutSeconds)
-            };
+            //_httpClient = Singletons.SharedHTTPClient;
             _logger = logger;
             Init();
         }
-
-        public HTTPHelper(HttpClient httpClient)
+        public HTTPHelper()
         {
-            _httpClient ??= httpClient;
+            //_httpClient = Singletons.SharedHTTPClient;
             _logger = Utilities.NewLogger<HTTPHelper>();
             Init();
         }
 
-        public HTTPHelper(ILogger logger, HttpClient httpClient)
-        {
-            _httpClient ??= httpClient;
-            _logger = (ILogger<HTTPHelper>)logger;
-            Init();
-        }
+        //public HTTPHelper(ILogger logger)
+        //{
+        //    _httpClient = Singletons.SharedHTTPClient;
+        //    _logger = (ILogger<HTTPHelper>)logger;
+        //    Init();
+        //}
+
+        //public HTTPHelper(HttpClient httpClient)
+        //{
+        //    _httpClient ??= Singletons.SharedHTTPClient;
+        //    _logger = Utilities.NewLogger<HTTPHelper>();
+        //    Init();
+        //}
+
+        //public HTTPHelper(ILogger logger, HttpClient httpClient)
+        //{
+        //    _httpClient ??= Singletons.SharedHTTPClient;
+        //    _logger = (ILogger<HTTPHelper>)logger;
+        //    Init();
+        //}
 
         private void Init()
         {

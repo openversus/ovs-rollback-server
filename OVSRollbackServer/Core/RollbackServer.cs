@@ -60,7 +60,8 @@ namespace OVS.Rollback.Core
             int maxPlayers = Constants.MaxPlayers)
         {
             _logger = logger;
-            _httpHelper = new HTTPHelper(_logger);
+            //_httpHelper = new HTTPHelper(_logger);
+            _httpHelper = Singletons.SharedHTTPHelper;
             _port = port;
             _maxPlayers = maxPlayers;
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -394,6 +395,23 @@ namespace OVS.Rollback.Core
                         Workspace = new TickWorkspace(config.MaxPlayers)
                         //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
+
+                    if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
+                    {
+                        //Utilities.FinalLogFile = Path.Combine(Utilities.LogDir, $"{match.MatchId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
+                        var safeMatchID = match.MatchId.StringIsNullOrWhiteSpace ? $"UnknownMatchID_{Guid.NewGuid()}" : match.MatchId;
+                        Statics.FinalLogFileName = $"{safeMatchID}_{_port}_{DateTime.UtcNow.ToString("yyyyMMdd_HHmmss")}.log";
+
+                        if (Statics.LogArchivePath.NotNullOrWhiteSpace)
+                        {
+                            Statics.FinalLogFile = Path.Combine(Statics.LogArchivePath, Statics.FinalLogFileName);
+                        }
+                        if (_logger?.IsEnabled(LogLevel.Information) == true)
+                        {
+                            _logger.LogInformation("Set final log file path to: {FinalLogFile}", Statics.FinalLogFile);
+                        }
+                    }
+
                     for (int i = 0; i < config.ActualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
@@ -898,6 +916,8 @@ namespace OVS.Rollback.Core
             long nextTickTime = startTime + targetIntervalTicks;
             long accumulatedError = 0;
 
+            _logger.LogInformation("Stopwatch raw frequency resolution is: {Frequency}", Stopwatch.Frequency);
+
             // Get spin threshold from configuration
             long spinThreshold;
             if (config.Performance.UseAdaptiveSpinThreshold)
@@ -915,8 +935,8 @@ namespace OVS.Rollback.Core
             }
 
             _logger.LogInformation(
-                "Starting tick loop for match {MatchId} with target interval {Interval} ms, " +
-                "spin threshold {SpinThreshold} μs (spinThreshold: {spinThreshold}), adaptive spin: {AdaptiveSpin}",
+                "Starting tick loop for match {MatchId} with target interval {Interval}ms, " +
+                "spin threshold {SpinThreshold}μs (spinThreshold: {spinThreshold}), adaptive spin: {AdaptiveSpin}",
                 match.MatchId, match.TickIntervalMs, spinThreshold * 1_000_000.0 / Stopwatch.Frequency, spinThreshold,
                 config.Performance.UseAdaptiveSpinThreshold);
 

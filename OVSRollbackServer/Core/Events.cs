@@ -162,7 +162,10 @@ namespace OVS.Rollback.Core
         public static Task SendTerminatingErrorEvent(object? sender, StatusEventArgs e)
         {
             FireMatchStatusEvent(OnTerminatingError, sender, e);
-            Server.cts.Cancel();
+            if (!Server.cts.IsCancellationRequested)
+            {
+                Server.cts.Cancel();
+            }
             return Task.CompletedTask;
         }
 
