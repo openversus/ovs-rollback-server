@@ -47,13 +47,26 @@ namespace OVS.Rollback
         private static string CreateAndSetLogPath()
         {
             bool useTempFile = false;
+            string LogDir = String.Empty;
             string LogFile = String.Empty;
+            string LogFileName = "running_log.log";
+
 
             string AppData = OperatingSystem.IsWindows()
                 ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
                 : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
-            string LogDir = Path.Combine(AppData, "openversus", "rollback-server");
+            string envLogPathOverride = ServerConfiguration.GetEnvString("Logging__LogFilePath", String.Empty) ?? String.Empty;
+
+            if (envLogPathOverride.NotNullOrWhiteSpace)
+            {
+                LogDir = Path.GetDirectoryName(envLogPathOverride) ?? String.Empty;
+                LogFileName = Path.GetFileName(envLogPathOverride) ?? LogFileName;
+            }
+            else
+            {
+                LogDir = Path.Combine(AppData, "openversus", "rollback-server");
+            }
 
             if (!Path.Exists(LogDir))
             {
@@ -70,7 +83,7 @@ namespace OVS.Rollback
 
             if (!useTempFile && LogFile.StringIsNullOrWhiteSpace)
             {
-                LogFile = Path.Combine(LogDir, "running_log.log");
+                LogFile = Path.Combine(LogDir, LogFileName);
             }
 
             Console.WriteLine($"Log file path: {LogFile}");
