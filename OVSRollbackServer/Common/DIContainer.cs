@@ -166,6 +166,11 @@ namespace OVS.Rollback.Common
                 return;
             }
 
+            Utilities.CreateAndSetLogPath();
+            Statics.PreLoggerMessages.Add($"{LogPrefix} Log file path: {Utilities.LogPath}");
+            Statics.PrematchMatchUpdateKey = ServerConfiguration.GetEnvString("Server__MatchUpdateKey", "DIMisconfiguredMatchUpdateKey") ?? "DIMisconfiguredMatchUpdateKey";
+            Statics.LogArchivePath = Statics.FinalLogPath = ServerConfiguration.GetEnvString("Logging__LogArchivePath", String.Empty) ?? String.Empty;
+
             _rootLogger ??= DICreateRootLogger();
             ParseCmdLine();
 
@@ -229,6 +234,12 @@ namespace OVS.Rollback.Common
             
             Microsoft.Extensions.Logging.ILogger<ServerConfiguration> configLogger = new SerilogLoggerFactory().CreateLogger<ServerConfiguration>();
             ServerConfiguration config = new ServerConfiguration(configLogger);
+            if (config.Server.MatchUpdateKey.StringIsNullOrWhiteSpace || config.Server.MatchUpdateKey == "DIMisconfiguredMatchUpdateKey" || config.Server.MatchUpdateKey == "MisconfiguredMatchUpdateKey")
+            {
+                Statics.PreLoggerMessages.Add($"{LogPrefix} Server__MatchUpdateKey is not set or is using the default placeholder value. Using default: {Statics.PrematchMatchUpdateKey}");
+                config.Server.MatchUpdateKey = Statics.PrematchMatchUpdateKey;
+            }
+            //Server__MatchUpdateKey
             HttpClient httpClient = new HttpClient {
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };
@@ -260,6 +271,9 @@ namespace OVS.Rollback.Common
         [ModuleInitializer]
         internal static void CreateRootLogger()
         {
+            // Force Utilities ModuleInitializer to run to ensure LogPath is set before logger configuration
+            _ = Utilities.LogPath;
+
             string assmLocation = Assembly.GetExecutingAssembly().Location;
             string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
             string basePath = assmLocation.Replace(manifestName, "");
@@ -268,6 +282,20 @@ namespace OVS.Rollback.Common
                     .SetBasePath(basePath)
                     .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
                     .Build();
+
+            var logPathKey = rootLoggerConfig
+                    .AsEnumerable()
+                    .FirstOrDefault(kvp => kvp.Value == "__DO_NOT_EDIT_PLACEHOLDER_PATH__")
+                    .Key;
+
+            if (!logPathKey.StringIsNullOrWhiteSpace)
+            {
+                rootLoggerConfig = new ConfigurationBuilder()
+                    .SetBasePath(basePath)
+                    .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
+                    .AddInMemoryCollection(new Dictionary<string, string?> { [logPathKey] = Utilities.LogPath })
+                    .Build();
+            }
 
             Log.Logger = _rootLogger = Singletons._rootLogger = new LoggerConfiguration()
                 .ReadFrom.Configuration(rootLoggerConfig)

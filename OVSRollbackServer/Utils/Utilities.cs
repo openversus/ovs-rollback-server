@@ -41,7 +41,54 @@ namespace OVS.Rollback
         private static readonly ILogger<UtilitiesLog> logger = NewLogger<UtilitiesLog>();
         private static bool _isOVS = default;
         private static bool _isMVSI = default;
-        public static string BaseUrl { get; private set; } = "";
+        public static string BaseUrl { get; private set; } = String.Empty;
+        public static string LogDir { get; internal set; } = String.Empty;
+        public static string LogFilename { get; internal set; } = $"{Guid.NewGuid()}.log";
+        public static string LogPath { get; internal set; } = CreateAndSetLogPath();
+
+        internal static string CreateAndSetLogPath()
+        {
+            bool useTempFile = false;
+            string LogFile = String.Empty;
+
+            string AppData = OperatingSystem.IsWindows()
+                ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            string envLogPathOverride = ServerConfiguration.GetEnvString("Logging__LogFilePath", String.Empty) ?? String.Empty;
+
+            if (envLogPathOverride.NotNullOrWhiteSpace)
+            {
+                LogDir = Path.GetDirectoryName(envLogPathOverride) ?? String.Empty;
+                LogFilename = Path.GetFileName(envLogPathOverride) ?? LogFilename;
+            }
+            else
+            {
+                LogDir = Path.Combine(AppData, "openversus", "rollback-server");
+            }
+
+            if (!Path.Exists(LogDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(LogDir);
+                }
+                catch
+                {
+                    useTempFile = true;
+                    LogFile = Path.GetTempFileName();
+                }
+            }
+
+            if (!useTempFile)
+            {
+                LogFile = Path.Combine(LogDir, LogFilename);
+            }
+
+            //Console.WriteLine($"Log file path: {LogFile}");
+            return LogFile;
+        }
+
         public static bool IsOVS {
             
             get {

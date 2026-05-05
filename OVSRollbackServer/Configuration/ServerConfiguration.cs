@@ -251,8 +251,10 @@ namespace OVS.Rollback.Configuration
 
             // Logging settings
             loggingSettings.MinimumLevel = GetEnvString("Logging__MinimumLevel", loggingSettings.MinimumLevel) ?? "Information";
+            loggingSettings.LogFilePath = GetEnvString("Logging__LogFilePath", loggingSettings.LogFilePath) ?? String.Empty;
+            loggingSettings.LogArchivePath = GetEnvString("Logging__LogArchivePath", loggingSettings.LogArchivePath) ?? String.Empty;
             loggingSettings.EnableMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableMetrics);
-            loggingSettings.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableConsoleMetrics);
+            loggingSettings.EnableConsoleMetrics = GetEnvBool("Logging__EnableConsoleMetrics", loggingSettings.EnableConsoleMetrics);
             loggingSettings.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", loggingSettings.EnableDebugLogs);
             loggingSettings.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", loggingSettings.LogTickPerformance);
             loggingSettings.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", loggingSettings.TickPerformanceInterval);
@@ -336,8 +338,10 @@ namespace OVS.Rollback.Configuration
 
             // Logging settings
             Logging.MinimumLevel = GetEnvString("Logging__MinimumLevel", Logging.MinimumLevel) ?? "Information";
+            Logging.LogFilePath = GetEnvString("Logging__LogFilePath", Logging.LogFilePath) ?? String.Empty;
+            Logging.LogArchivePath = GetEnvString("Logging__LogArchivePath", Logging.LogArchivePath) ?? String.Empty;
             Logging.EnableMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableMetrics);
-            Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableConsoleMetrics);
+            Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableConsoleMetrics", Logging.EnableConsoleMetrics);
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
@@ -346,25 +350,25 @@ namespace OVS.Rollback.Configuration
         }
 
         // Helper methods for environment variable parsing
-        private static string? GetEnvString(string key, string? defaultValue)
+        protected internal static string? GetEnvString(string key, string? defaultValue)
             => Environment.GetEnvironmentVariable(key) ?? defaultValue;
 
-        private static int GetEnvInt(string key, int defaultValue)
+        protected internal static int GetEnvInt(string key, int defaultValue)
             => int.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
 
-        private static uint GetEnvUInt(string key, uint defaultValue)
+        protected internal static uint GetEnvUInt(string key, uint defaultValue)
             => uint.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
 
-        private static ushort GetEnvUShort(string key, ushort defaultValue)
+        protected internal static ushort GetEnvUShort(string key, ushort defaultValue)
             => ushort.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
 
-        private static byte GetEnvByte(string key, byte defaultValue)
+        protected internal static byte GetEnvByte(string key, byte defaultValue)
             => byte.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
 
-        private static float GetEnvFloat(string key, float defaultValue)
+        protected internal static float GetEnvFloat(string key, float defaultValue)
             => float.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
 
-        private static bool GetEnvBool(string key, bool defaultValue)
+        protected internal static bool GetEnvBool(string key, bool defaultValue)
         {
             string value = Environment.GetEnvironmentVariable(key) ?? string.Empty;
             if (value.StringIsNullOrEmpty)
@@ -380,10 +384,10 @@ namespace OVS.Rollback.Configuration
     {
         public ushort Port { get; set; } = 8080;
         public int MaxPlayers { get; set; } = 6;
-        public string BaseUrl { get; set; } = "";
-        public string HostName { get; set; } = "";
+        public string BaseUrl { get; set; } = String.Empty;
+        public string HostName { get; set; } = String.Empty;
         public bool FireMatchEvents { get; set; } = true;
-        public string MatchUpdateKey { get; set; } = "MisconfiguredMatchUpdateKey";
+        public string MatchUpdateKey { get; set; } = String.Empty;
         public bool VerboseLogging { get; set; } = false;
         public bool MementoMori { get; set; } = true;
     }
@@ -451,6 +455,8 @@ namespace OVS.Rollback.Configuration
     public class LoggingSettings
     {
         public string MinimumLevel { get; set; } = "Information";
+        public string LogFilePath { get; set; } = String.Empty;
+        public string LogArchivePath { get; set; } = String.Empty;
         public bool EnableMetrics { get; set; } = true;
         public bool EnableConsoleMetrics { get; set; } = false;
         public bool EnableDebugLogs { get; set; } = false;

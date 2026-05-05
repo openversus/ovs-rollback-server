@@ -408,6 +408,23 @@ namespace OVS.Rollback.Core
                             config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
                         )
                     };
+
+                    if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
+                    {
+                        //Utilities.FinalLogFile = Path.Combine(Utilities.LogDir, $"{match.MatchId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
+                        var safeMatchID = match.MatchId.StringIsNullOrWhiteSpace ? $"UnknownMatchID_{Guid.NewGuid()}" : match.MatchId;
+                        Statics.FinalLogFileName = $"{safeMatchID}_{_port}_{DateTime.UtcNow.ToString("yyyyMMdd_HHmmss")}.log";
+
+                        if (Statics.LogArchivePath.NotNullOrWhiteSpace)
+                        {
+                            Statics.FinalLogFile = Path.Combine(Statics.LogArchivePath, Statics.FinalLogFileName);
+                        }
+                        if (_logger?.IsEnabled(LogLevel.Information) == true)
+                        {
+                            _logger.LogInformation("Set final log file path to: {FinalLogFile}", Statics.FinalLogFile);
+                        }
+                    }
+
                     for (int i = 0; i < config.MaxPlayers - config.NumSpectators; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());

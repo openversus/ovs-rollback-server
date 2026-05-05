@@ -11,6 +11,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using System.Text;
 using OVS.Rollback.Common;
+using Serilog;
 
 namespace OVS.Rollback
 {
@@ -40,6 +41,15 @@ namespace OVS.Rollback
             // ═══════════════════════════════════════════
 
             logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+
+            if (Statics.PreLoggerMessages.Count > 0)
+            {
+                foreach (string message in Statics.PreLoggerMessages)
+                {
+                    logger.LogInformation($"{LogPrefix} PreLogger message: {message}");
+                }
+                Statics.PreLoggerMessages.Clear();
+            }
 
             Config = Singletons.Config;
             MementoMori = Config.Server.MementoMori;
@@ -153,6 +163,7 @@ namespace OVS.Rollback
             catch (Exception ex)
             {
                 logger.LogError("{LogPrefix} Error: {Message}", LogPrefix, ex.Message);
+                CloseLogger();
                 return 1;
             }
             finally
@@ -165,6 +176,7 @@ namespace OVS.Rollback
                 RunTimer.Stop();
             }
 
+            CloseLogger();
             return 0;
         }
 
@@ -193,6 +205,30 @@ namespace OVS.Rollback
             //    SignalSender.MementoMori();
             //    return Task.FromResult(default(MatchStatusResponse)!);
             //};
+        }
+
+        private static void CloseLogger()
+        {
+            try
+            {
+                Log.CloseAndFlush();
+            }
+            catch (Exception logEx)
+            {
+                Console.Error.WriteLine($"{LogPrefix} Failed to close and flush main logger instance: {logEx}");
+            }
+            if (Statics.ShouldMoveLogfile)
+            {
+                try
+                {
+                    File.Move(Utilities.LogPath, Statics.FinalLogFile);
+                    Console.WriteLine($"{LogPrefix} Log file moved to final location: {Statics.FinalLogFile}");
+                }
+                catch (Exception archiveEx)
+                {
+                    Console.Error.WriteLine($"{LogPrefix} Failed to archive log file: {archiveEx}");
+                }
+            }
         }
     }
 }
