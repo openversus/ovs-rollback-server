@@ -19,6 +19,7 @@ namespace OVS.Rollback.Configuration
         private static readonly object _lock = new();
         private static ILogger? _logger;
         private static string _configPath = "appsettings.json";
+        protected internal static string TempLogfileGUID = String.Empty;
         public static readonly string LogPrefix = Utilities.LogPrefix;
 
         // Configuration sections
@@ -252,6 +253,7 @@ namespace OVS.Rollback.Configuration
             // Logging settings
             loggingSettings.MinimumLevel = GetEnvString("Logging__MinimumLevel", loggingSettings.MinimumLevel) ?? "Information";
             loggingSettings.LogFilePath = GetEnvString("Logging__LogFilePath", loggingSettings.LogFilePath) ?? String.Empty;
+            loggingSettings.LogArchivePath = GetEnvString("Logging__LogArchivePath", loggingSettings.LogArchivePath) ?? String.Empty;
             loggingSettings.EnableMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableMetrics);
             loggingSettings.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableConsoleMetrics);
             loggingSettings.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", loggingSettings.EnableDebugLogs);
@@ -338,6 +340,7 @@ namespace OVS.Rollback.Configuration
             // Logging settings
             Logging.MinimumLevel = GetEnvString("Logging__MinimumLevel", Logging.MinimumLevel) ?? "Information";
             Logging.LogFilePath = GetEnvString("Logging__LogFilePath", Logging.LogFilePath) ?? String.Empty;
+            Logging.LogArchivePath = GetEnvString("Logging__LogArchivePath", Logging.LogArchivePath) ?? String.Empty;
             Logging.EnableMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableMetrics);
             Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableConsoleMetrics);
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
@@ -454,6 +457,7 @@ namespace OVS.Rollback.Configuration
     {
         public string MinimumLevel { get; set; } = "Information";
         public string LogFilePath { get; set; } = String.Empty;
+        public string LogArchivePath { get; set; } = String.Empty;
         public bool EnableMetrics { get; set; } = true;
         public bool EnableConsoleMetrics { get; set; } = false;
         public bool EnableDebugLogs { get; set; } = false;

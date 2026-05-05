@@ -208,6 +208,17 @@ namespace OVS.Rollback
             {
                 Console.Error.WriteLine($"[{LogPrefix}] Failed to close and flush main logger instance: {logEx}");
             }
+            if (null != Config && Config.Logging.LogArchivePath.NotNullOrWhiteSpace && Utilities.FinalLogFile.NotNullOrWhiteSpace)
+            {
+                try
+                {
+                    File.Move(Utilities.LogPath, Utilities.FinalLogFile);
+                }
+                catch (Exception archiveEx)
+                {
+                    Console.Error.WriteLine($"[{LogPrefix}] Failed to archive log file: {archiveEx}");
+                }
+            }
         }
     }
 }

@@ -42,15 +42,15 @@ namespace OVS.Rollback
         private static bool _isOVS = default;
         private static bool _isMVSI = default;
         public static string BaseUrl { get; private set; } = String.Empty;
+        public static string LogDir { get; internal set; } = String.Empty;
+        public static string LogFilename { get; internal set; } = ServerConfiguration.TempLogfileGUID = Guid.NewGuid().ToString();
         public static string LogPath { get; internal set; } = CreateAndSetLogPath();
+        public static string FinalLogFile { get; internal set; } = String.Empty;
 
         private static string CreateAndSetLogPath()
         {
             bool useTempFile = false;
-            string LogDir = String.Empty;
             string LogFile = String.Empty;
-            string LogFileName = "running_log.log";
-
 
             string AppData = OperatingSystem.IsWindows()
                 ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
@@ -61,7 +61,7 @@ namespace OVS.Rollback
             if (envLogPathOverride.NotNullOrWhiteSpace)
             {
                 LogDir = Path.GetDirectoryName(envLogPathOverride) ?? String.Empty;
-                LogFileName = Path.GetFileName(envLogPathOverride) ?? LogFileName;
+                LogFilename = Path.GetFileName(envLogPathOverride) ?? LogFilename;
             }
             else
             {
@@ -83,10 +83,10 @@ namespace OVS.Rollback
 
             if (!useTempFile && LogFile.StringIsNullOrWhiteSpace)
             {
-                LogFile = Path.Combine(LogDir, LogFileName);
+                LogFile = Path.Combine(LogDir, LogFilename);
             }
 
-            Console.WriteLine($"Log file path: {LogFile}");
+            //Console.WriteLine($"Log file path: {LogFile}");
             return LogFile;
         }
 

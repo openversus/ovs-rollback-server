@@ -395,6 +395,12 @@ namespace OVS.Rollback.Core
                         Workspace = new TickWorkspace(config.MaxPlayers)
                         //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
+
+                    if (Utilities.FinalLogFile.StringIsNullOrWhiteSpace)
+                    {
+                        Utilities.FinalLogFile = Path.Combine(Utilities.LogDir, $"{match.MatchId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
+                    }
+
                     for (int i = 0; i < config.ActualPlayers; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
