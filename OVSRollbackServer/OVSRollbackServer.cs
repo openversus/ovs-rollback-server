@@ -215,18 +215,18 @@ namespace OVS.Rollback
             }
             catch (Exception logEx)
             {
-                Console.Error.WriteLine($"[{LogPrefix}] Failed to close and flush main logger instance: {logEx}");
+                Console.Error.WriteLine($"{LogPrefix} Failed to close and flush main logger instance: {logEx}");
             }
             if (Statics.ShouldMoveLogfile)
             {
                 try
                 {
                     File.Move(Utilities.LogPath, Statics.FinalLogFile);
-                    Console.WriteLine($"[{LogPrefix}] Log file moved to final location: {Statics.FinalLogFile}");
+                    Console.WriteLine($"{LogPrefix} Log file moved to final location: {Statics.FinalLogFile}");
                 }
                 catch (Exception archiveEx)
                 {
-                    Console.Error.WriteLine($"[{LogPrefix}] Failed to archive log file: {archiveEx}");
+                    Console.Error.WriteLine($"{LogPrefix} Failed to archive log file: {archiveEx}");
                 }
             }
         }
