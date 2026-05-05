@@ -47,7 +47,7 @@ namespace OVS.Rollback
         public static string LogPath { get; internal set; } = CreateAndSetLogPath();
         public static string FinalLogFile { get; internal set; } = String.Empty;
 
-        private static string CreateAndSetLogPath()
+        internal static string CreateAndSetLogPath()
         {
             bool useTempFile = false;
             string LogFile = String.Empty;
@@ -295,13 +295,6 @@ namespace OVS.Rollback
         public static dynamic? GetRequiredService<TType>(TType type) where TType : class
         {
             return Singletons.RollbackDIContainer?.GenericHost?.Services.GetRequiredService<TType>();
-        }
-
-        [ModuleInitializer]
-
-        public static void Init()
-        {
-            LogPath = Utilities.CreateAndSetLogPath();
         }
     }
 }

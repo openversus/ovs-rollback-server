@@ -166,6 +166,7 @@ namespace OVS.Rollback.Common
                 return;
             }
 
+            Utilities.CreateAndSetLogPath();
             Statics.PrematchMatchUpdateKey = ServerConfiguration.GetEnvString("Server__MatchUpdateKey", "DIMisconfiguredMatchUpdateKey") ?? "DIMisconfiguredMatchUpdateKey";
 
             _rootLogger ??= DICreateRootLogger();
