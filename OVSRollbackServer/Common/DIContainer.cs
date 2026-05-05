@@ -166,6 +166,8 @@ namespace OVS.Rollback.Common
                 return;
             }
 
+            Statics.PrematchMatchUpdateKey = ServerConfiguration.GetEnvString("Server__MatchUpdateKey", "DIMisconfiguredMatchUpdateKey") ?? "DIMisconfiguredMatchUpdateKey";
+
             _rootLogger ??= DICreateRootLogger();
             ParseCmdLine();
 
@@ -229,6 +231,12 @@ namespace OVS.Rollback.Common
             
             Microsoft.Extensions.Logging.ILogger<ServerConfiguration> configLogger = new SerilogLoggerFactory().CreateLogger<ServerConfiguration>();
             ServerConfiguration config = new ServerConfiguration(configLogger);
+            if (config.Server.MatchUpdateKey.StringIsNullOrWhiteSpace || config.Server.MatchUpdateKey == "DIMisconfiguredMatchUpdateKey" || config.Server.MatchUpdateKey == "MisconfiguredMatchUpdateKey")
+            {
+                Console.WriteLine("{LogPrefix} Server__MatchUpdateKey is not set or is using the default placeholder value. Using default: {DefaultKey}", LogPrefix, Statics.PrematchMatchUpdateKey);
+                config.Server.MatchUpdateKey = Statics.PrematchMatchUpdateKey;
+            }
+            //Server__MatchUpdateKey
             HttpClient httpClient = new HttpClient {
                 Timeout = TimeSpan.FromSeconds(config.Networking.HttpTimeoutSeconds)
             };

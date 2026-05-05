@@ -24,6 +24,7 @@ namespace OVS.Rollback.Common
         private static LoggingColorRoot _loggingColorRoot = new LoggingColorRoot();
         private static string _dateFormat = "yyyy-MM-dd";
         private static string _timeFormat = "HH:mm:ss.fff";
+        internal static string PrematchMatchUpdateKey = String.Empty;
         public static DIContainer? _diContainer;
 
         /// <summary>

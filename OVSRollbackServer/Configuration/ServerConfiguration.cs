@@ -385,10 +385,10 @@ namespace OVS.Rollback.Configuration
     {
         public ushort Port { get; set; } = 8080;
         public int MaxPlayers { get; set; } = 6;
-        public string BaseUrl { get; set; } = "";
-        public string HostName { get; set; } = "";
+        public string BaseUrl { get; set; } = String.Empty;
+        public string HostName { get; set; } = String.Empty;
         public bool FireMatchEvents { get; set; } = true;
-        public string MatchUpdateKey { get; set; } = "MisconfiguredMatchUpdateKey";
+        public string MatchUpdateKey { get; set; } = String.Empty;
         public bool VerboseLogging { get; set; } = false;
         public bool MementoMori { get; set; } = true;
     }
