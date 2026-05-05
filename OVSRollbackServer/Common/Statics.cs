@@ -25,6 +25,7 @@ namespace OVS.Rollback.Common
         private static string _dateFormat = "yyyy-MM-dd";
         private static string _timeFormat = "HH:mm:ss.fff";
         internal static string PrematchMatchUpdateKey = String.Empty;
+        internal static List<string> PreLoggerMessages = [];
         public static DIContainer? _diContainer;
 
         /// <summary>

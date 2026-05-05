@@ -233,7 +233,7 @@ namespace OVS.Rollback.Common
             ServerConfiguration config = new ServerConfiguration(configLogger);
             if (config.Server.MatchUpdateKey.StringIsNullOrWhiteSpace || config.Server.MatchUpdateKey == "DIMisconfiguredMatchUpdateKey" || config.Server.MatchUpdateKey == "MisconfiguredMatchUpdateKey")
             {
-                Console.WriteLine("{LogPrefix} Server__MatchUpdateKey is not set or is using the default placeholder value. Using default: {DefaultKey}", LogPrefix, Statics.PrematchMatchUpdateKey);
+                Statics.PreLoggerMessages.Add($"{LogPrefix} Server__MatchUpdateKey is not set or is using the default placeholder value. Using default: {Statics.PrematchMatchUpdateKey}");
                 config.Server.MatchUpdateKey = Statics.PrematchMatchUpdateKey;
             }
             //Server__MatchUpdateKey
