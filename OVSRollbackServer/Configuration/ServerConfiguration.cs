@@ -254,7 +254,7 @@ namespace OVS.Rollback.Configuration
             loggingSettings.LogFilePath = GetEnvString("Logging__LogFilePath", loggingSettings.LogFilePath) ?? String.Empty;
             loggingSettings.LogArchivePath = GetEnvString("Logging__LogArchivePath", loggingSettings.LogArchivePath) ?? String.Empty;
             loggingSettings.EnableMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableMetrics);
-            loggingSettings.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", loggingSettings.EnableConsoleMetrics);
+            loggingSettings.EnableConsoleMetrics = GetEnvBool("Logging__EnableConsoleMetrics", loggingSettings.EnableConsoleMetrics);
             loggingSettings.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", loggingSettings.EnableDebugLogs);
             loggingSettings.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", loggingSettings.LogTickPerformance);
             loggingSettings.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", loggingSettings.TickPerformanceInterval);
@@ -341,7 +341,7 @@ namespace OVS.Rollback.Configuration
             Logging.LogFilePath = GetEnvString("Logging__LogFilePath", Logging.LogFilePath) ?? String.Empty;
             Logging.LogArchivePath = GetEnvString("Logging__LogArchivePath", Logging.LogArchivePath) ?? String.Empty;
             Logging.EnableMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableMetrics);
-            Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableMetrics", Logging.EnableConsoleMetrics);
+            Logging.EnableConsoleMetrics = GetEnvBool("Logging__EnableConsoleMetrics", Logging.EnableConsoleMetrics);
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
