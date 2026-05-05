@@ -11,6 +11,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using System.Text;
 using OVS.Rollback.Common;
+using Serilog;
 
 namespace OVS.Rollback
 {
@@ -153,6 +154,7 @@ namespace OVS.Rollback
             catch (Exception ex)
             {
                 logger.LogError("{LogPrefix} Error: {Message}", LogPrefix, ex.Message);
+                CloseLogger();
                 return 1;
             }
             finally
@@ -165,6 +167,7 @@ namespace OVS.Rollback
                 RunTimer.Stop();
             }
 
+            CloseLogger();
             return 0;
         }
 
@@ -193,6 +196,18 @@ namespace OVS.Rollback
             //    SignalSender.MementoMori();
             //    return Task.FromResult(default(MatchStatusResponse)!);
             //};
+        }
+
+        private static void CloseLogger()
+        {
+            try
+            {
+                Log.CloseAndFlush();
+            }
+            catch (Exception logEx)
+            {
+                Console.Error.WriteLine($"[{LogPrefix}] Failed to close and flush main logger instance: {logEx}");
+            }
         }
     }
 }

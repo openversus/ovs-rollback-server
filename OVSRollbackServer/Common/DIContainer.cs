@@ -260,6 +260,9 @@ namespace OVS.Rollback.Common
         [ModuleInitializer]
         internal static void CreateRootLogger()
         {
+            // Force Utilities ModuleInitializer to run to ensure LogPath is set before logger configuration
+            _ = Utilities.LogPath;
+
             string assmLocation = Assembly.GetExecutingAssembly().Location;
             string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
             string basePath = assmLocation.Replace(manifestName, "");
@@ -268,6 +271,20 @@ namespace OVS.Rollback.Common
                     .SetBasePath(basePath)
                     .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
                     .Build();
+
+            var logPathKey = rootLoggerConfig
+                    .AsEnumerable()
+                    .FirstOrDefault(kvp => kvp.Value == "__DO_NOT_EDIT_PLACEHOLDER_PATH__")
+                    .Key;
+
+            if (!logPathKey.StringIsNullOrWhiteSpace)
+            {
+                rootLoggerConfig = new ConfigurationBuilder()
+                    .SetBasePath(basePath)
+                    .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
+                    .AddInMemoryCollection(new Dictionary<string, string?> { [logPathKey] = Utilities.LogPath })
+                    .Build();
+            }
 
             Log.Logger = _rootLogger = Singletons._rootLogger = new LoggerConfiguration()
                 .ReadFrom.Configuration(rootLoggerConfig)

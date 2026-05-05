@@ -19,16 +19,16 @@
   <ItemGroup Label="PackageReferences">
     <!-- OpenTelemetry for metrics export -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-    <PackageReference Include="OpenTelemetry" Version="1.15.2" />
-    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.2" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.2" />
+    <PackageReference Include="OpenTelemetry" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
 
     <!-- Microsoft.Extensions for hosting and logging -->
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.6" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.6" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="10.0.7" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.7" />
 
     <!-- Serilog for structured logging -->
     <PackageReference Include="Serilog" Version="4.3.1" />

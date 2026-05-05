@@ -41,7 +41,42 @@ namespace OVS.Rollback
         private static readonly ILogger<UtilitiesLog> logger = NewLogger<UtilitiesLog>();
         private static bool _isOVS = default;
         private static bool _isMVSI = default;
-        public static string BaseUrl { get; private set; } = "";
+        public static string BaseUrl { get; private set; } = String.Empty;
+        public static string LogPath { get; internal set; } = CreateAndSetLogPath();
+
+        private static string CreateAndSetLogPath()
+        {
+            bool useTempFile = false;
+            string LogFile = String.Empty;
+
+            string AppData = OperatingSystem.IsWindows()
+                ? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+            string LogDir = Path.Combine(AppData, "openversus", "rollback-server");
+
+            if (!Path.Exists(LogDir))
+            {
+                try
+                {
+                    Directory.CreateDirectory(LogDir);
+                }
+                catch
+                {
+                    useTempFile = true;
+                    LogFile = Path.GetTempFileName();
+                }
+            }
+
+            if (!useTempFile && LogFile.StringIsNullOrWhiteSpace)
+            {
+                LogFile = Path.Combine(LogDir, "running_log.log");
+            }
+
+            Console.WriteLine($"Log file path: {LogFile}");
+            return LogFile;
+        }
+
         public static bool IsOVS {
             
             get {
@@ -247,6 +282,13 @@ namespace OVS.Rollback
         public static dynamic? GetRequiredService<TType>(TType type) where TType : class
         {
             return Singletons.RollbackDIContainer?.GenericHost?.Services.GetRequiredService<TType>();
+        }
+
+        [ModuleInitializer]
+
+        public static void Init()
+        {
+            LogPath = Utilities.CreateAndSetLogPath();
         }
     }
 }

@@ -23,7 +23,7 @@ namespace OVS.Rollback.Common
     {
         private static LoggingColorRoot _loggingColorRoot = new LoggingColorRoot();
         private static string _dateFormat = "yyyy-MM-dd";
-        private static string _timeFormat = "HH:mm:ss";
+        private static string _timeFormat = "HH:mm:ss.fff";
         public static DIContainer? _diContainer;
 
         /// <summary>
@@ -165,7 +165,7 @@ namespace OVS.Rollback.Common
                 if (_timeFormat.StringIsNullOrWhiteSpace)
                 {
                     //_timeFormat = "HH:mm:ss.fffK";
-                    _timeFormat = "HH:mm:ss";
+                    _timeFormat = "HH:mm:ss.fff";
                     return _timeFormat;
                 }
                 else
