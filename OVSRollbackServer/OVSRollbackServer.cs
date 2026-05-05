@@ -40,16 +40,16 @@ namespace OVS.Rollback
             //  Initialize Configuration
             // ═══════════════════════════════════════════
 
+            logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+
             if (Statics.PreLoggerMessages.Count > 0)
             {
                 foreach (string message in Statics.PreLoggerMessages)
                 {
-                    Console.WriteLine($"[{LogPrefix}] PreLogger message: {message}");
+                    logger.LogInformation($"{LogPrefix} PreLogger message: {message}");
                 }
                 Statics.PreLoggerMessages.Clear();
             }
-
-            logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
 
             Config = Singletons.Config;
             MementoMori = Config.Server.MementoMori;
