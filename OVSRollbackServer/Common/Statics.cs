@@ -25,8 +25,14 @@ namespace OVS.Rollback.Common
         private static string _dateFormat = "yyyy-MM-dd";
         private static string _timeFormat = "HH:mm:ss.fff";
         internal static string PrematchMatchUpdateKey = String.Empty;
+        internal static string LogArchivePath = String.Empty;
+        internal static string FinalLogPath = String.Empty;
+        internal static string FinalLogFileName = String.Empty;
+        internal static string FinalLogFile = String.Empty;
         internal static List<string> PreLoggerMessages = [];
         public static DIContainer? _diContainer;
+
+        internal static bool ShouldMoveLogfile { get => FinalLogFile.NotNullOrWhiteSpace; }
 
         /// <summary>
         /// Gets the application's dependency injection container instance.

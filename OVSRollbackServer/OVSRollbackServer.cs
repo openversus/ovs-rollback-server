@@ -217,11 +217,12 @@ namespace OVS.Rollback
             {
                 Console.Error.WriteLine($"[{LogPrefix}] Failed to close and flush main logger instance: {logEx}");
             }
-            if (null != Config && Config.Logging.LogArchivePath.NotNullOrWhiteSpace && Utilities.FinalLogFile.NotNullOrWhiteSpace)
+            if (Statics.ShouldMoveLogfile)
             {
                 try
                 {
-                    File.Move(Utilities.LogPath, Utilities.FinalLogFile);
+                    File.Move(Utilities.LogPath, Statics.FinalLogFile);
+                    Console.WriteLine($"[{LogPrefix}] Log file moved to final location: {Statics.FinalLogFile}");
                 }
                 catch (Exception archiveEx)
                 {

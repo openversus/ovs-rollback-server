@@ -169,6 +169,7 @@ namespace OVS.Rollback.Common
             Utilities.CreateAndSetLogPath();
             Statics.PreLoggerMessages.Add($"{LogPrefix} Log file path: {Utilities.LogPath}");
             Statics.PrematchMatchUpdateKey = ServerConfiguration.GetEnvString("Server__MatchUpdateKey", "DIMisconfiguredMatchUpdateKey") ?? "DIMisconfiguredMatchUpdateKey";
+            Statics.LogArchivePath = Statics.FinalLogPath = ServerConfiguration.GetEnvString("Logging__LogArchivePath", String.Empty) ?? String.Empty;
 
             _rootLogger ??= DICreateRootLogger();
             ParseCmdLine();

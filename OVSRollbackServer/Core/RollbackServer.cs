@@ -396,9 +396,18 @@ namespace OVS.Rollback.Core
                         //Workspace = new TickWorkspace(config.ActualPlayers)
                     };
 
-                    if (Utilities.FinalLogFile.StringIsNullOrWhiteSpace)
+                    if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
                     {
-                        Utilities.FinalLogFile = Path.Combine(Utilities.LogDir, $"{match.MatchId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
+                        //Utilities.FinalLogFile = Path.Combine(Utilities.LogDir, $"{match.MatchId}_{DateTime.UtcNow:yyyyMMdd_HHmmss}.log");
+                        var safeMatchID = match.MatchId.StringIsNullOrWhiteSpace ? $"UnknownMatchID_{Guid.NewGuid()}" : match.MatchId;
+                        Statics.FinalLogFileName = $"{safeMatchID}_{DateTime.UtcNow.ToString("yyyyMMdd_HHmmss")}.log";
+
+                        if (Statics.LogArchivePath.NotNullOrWhiteSpace)
+                        {
+                            Statics.FinalLogFile = Path.Combine(Statics.LogArchivePath, Statics.FinalLogFileName);
+                        }
+
+                        _logger.LogInformation("Set final log file path to: {FinalLogFile}", Statics.FinalLogFile);
                     }
 
                     for (int i = 0; i < config.ActualPlayers; i++)

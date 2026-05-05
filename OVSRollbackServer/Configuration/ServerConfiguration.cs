@@ -19,7 +19,6 @@ namespace OVS.Rollback.Configuration
         private static readonly object _lock = new();
         private static ILogger? _logger;
         private static string _configPath = "appsettings.json";
-        protected internal static string TempLogfileGUID = String.Empty;
         public static readonly string LogPrefix = Utilities.LogPrefix;
 
         // Configuration sections

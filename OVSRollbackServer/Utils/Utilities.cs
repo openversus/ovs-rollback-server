@@ -43,9 +43,8 @@ namespace OVS.Rollback
         private static bool _isMVSI = default;
         public static string BaseUrl { get; private set; } = String.Empty;
         public static string LogDir { get; internal set; } = String.Empty;
-        public static string LogFilename { get; internal set; } = ServerConfiguration.TempLogfileGUID = Guid.NewGuid().ToString();
+        public static string LogFilename { get; internal set; } = $"{Guid.NewGuid()}.log";
         public static string LogPath { get; internal set; } = CreateAndSetLogPath();
-        public static string FinalLogFile { get; internal set; } = String.Empty;
 
         internal static string CreateAndSetLogPath()
         {
