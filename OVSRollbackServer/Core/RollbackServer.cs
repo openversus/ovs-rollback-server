@@ -391,9 +391,22 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
-                        Inputs = new(config.ActualPlayers),
-                        Workspace = new TickWorkspace(config.MaxPlayers)
-                        //Workspace = new TickWorkspace(config.ActualPlayers)
+                        // Size Inputs by team-side slot count (MaxPlayers - NumSpectators).
+                        // Why not MaxPlayers: when spectators are included in MaxPlayers,
+                        // sizing Inputs by MaxPlayers leaves empty trailing slots that the
+                        // needMore loop checks forever, blocking the match.
+                        // Why not ActualPlayers (humans only): when bots occupy PlayerIndex
+                        // slots between humans, a human at PlayerIndex 2 in a 2-human match
+                        // would crash with IndexOutOfRange on Inputs[2].
+                        // Team-side count is right: every PlayerIndex 0..(team-side-1) is a
+                        // real participant (human or bot); spectators have PlayerIndex 8888
+                        // and are filtered separately.
+                        Inputs = new(config.MaxPlayers - config.NumSpectators),
+                        Workspace = new TickWorkspace(config.MaxPlayers),
+                        NumBots = config.NumBots,
+                        BotIndices = new HashSet<int>(
+                            config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
+                        )
                     };
 
                     if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
@@ -412,7 +425,7 @@ namespace OVS.Rollback.Core
                         }
                     }
 
-                    for (int i = 0; i < config.ActualPlayers; i++)
+                    for (int i = 0; i < config.MaxPlayers - config.NumSpectators; i++)
                     {
                         match.Inputs.Add(new ConcurrentDictionary<uint, uint>());
                     }
@@ -494,12 +507,15 @@ namespace OVS.Rollback.Core
                 PlayerId = playerID,
                 PlayerName = playerName,
                 PlayerCharacter = playerCharacter,
-                IsSpectator = payload.PlayerData.PlayerIndex == 8888 ? true : false,
+                // Spectators get a unique sentinel PlayerIndex starting at 8888
+                // (8888, 8889, 8890, ...) so multiple specs in one match don't
+                // collide on the OvsPlayer lookup.
+                IsSpectator = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
                 AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
                 Ping = 0,
-                Ready = payload.PlayerData.PlayerIndex == 8888 ? true : false,
+                Ready = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastClientFrame = 0,
                 LastInputTimestamp = Stopwatch.GetTimestamp(),
                 Rift = 0
@@ -530,7 +546,11 @@ namespace OVS.Rollback.Core
             };
             SendServerMessage(match, newPlayer, ServerMessageType.NewConnectionReply, reply);
 
-            if (match.ActualPlayers == match.MaxPlayers - match.NumSpectators)
+            // Bots occupy slots in MaxPlayers but never UDP-connect, so they
+            // never increment match.ActualPlayers (which is derived from
+            // match.Players runtime dict). Subtract them out of the expected
+            // count, otherwise the ready check waits forever.
+            if (match.ActualPlayers == match.MaxPlayers - match.NumSpectators - match.NumBots)
             {
                 StartPingPhase(match);
             }
@@ -1138,9 +1158,12 @@ namespace OVS.Rollback.Core
             }
 
             // ── Wait for minimum inputs (loop instead of LINQ .Any()) ──
+            // Skip bot slots — bots don't send inputs, their input dict stays
+            // empty, so iterating them would block the match forever.
             bool needMore = false;
             for (int i = 0; i < match.Inputs.Count; i++)
             {
+                if (match.BotIndices.Contains(i)) continue;
                 if (match.Inputs[i].Count < gameConfig.MinimumInputFrames) { needMore = true; break; }
             }
             if (needMore)
