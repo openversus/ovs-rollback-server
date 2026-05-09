@@ -117,6 +117,35 @@ public static class CompressionHelper
     //    return outBuf;
     // ═══════════════════════════════════════════════════════
 
+    public static byte[] Decompress(ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty) return [];
+
+        var output = new byte[1024];
+        int inPos = 0, outPos = 0;
+
+        while (inPos < data.Length && outPos < 1024)
+        {
+            byte mask = data[inPos++];
+
+            for (int bit = 0; bit < 8 && outPos < 1024; bit++)
+            {
+                if ((mask & (1 << bit)) != 0)
+                {
+                    if (inPos >= data.Length)
+                        break;
+                    output[outPos++] = data[inPos++];
+                }
+                else
+                {
+                    output[outPos++] = 0;
+                }
+            }
+        }
+
+        return output[..outPos];
+    }
+
     public static byte[] Decompress(byte[] data)
     {
         if (data == null || data.Length == 0)
