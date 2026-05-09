@@ -57,7 +57,12 @@ namespace OVS.Rollback.Models
         public ConcurrentDictionary<uint, ConcurrentDictionary<int, uint>> FrameChecksums { get; } = new();
 
         // ── Sequence & ping tracking ──
-        public uint SequenceCounter { get; set; } = uint.MaxValue;
+        // IMPORTANT: must start at 1, not 0. PingRingBuffer uses seq=0 as the
+        // "empty slot" sentinel (uint[] zero-initialises to 0). If the first packet
+        // ever sent carries sequence 0, TryRemove(0) will spuriously match every
+        // uninitialised ring slot and return a bogus timestamp (~server uptime),
+        // corrupting SmoothedPing and causing rift miscalculation ("sticky" inputs).
+        public uint SequenceCounter { get; set; } = 1;
         public uint PingPhaseCount { get; set; }
         public uint PingPhaseTotal { get; set; }
 

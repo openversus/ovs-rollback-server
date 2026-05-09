@@ -84,8 +84,8 @@ namespace OVS.Rollback.Models
                 if (_seqs[i] != seq) continue;
 
                 ts = _timestamps[i];
-                // Invalidate slot: use seq=0 as sentinel (sequence numbers start at uint.MaxValue
-                // in production and increment, so 0 is never a valid in-flight sequence).
+                // Invalidate slot: seq=0 is the sentinel for "empty" because _seqs[] zero-inits
+                // to 0 and SequenceCounter starts at 1, so 0 is never a valid live sequence.
                 _seqs[i] = 0;
                 return true;
             }
@@ -99,6 +99,9 @@ namespace OVS.Rollback.Models
             set => Add(seq, value);
         }
     }
+    // NOTE: sentinel value must match the initial fill of _seqs[].
+    // uint[] zero-initialises to 0, so 0 must NEVER be a valid sequence number.
+    // SequenceCounter in MatchState starts at 1 (not uint.MaxValue) to guarantee this.
 
     public class PlayerInfo
     {

@@ -386,7 +386,9 @@ namespace OVS.Rollback.Core
                         MaxPlayers = config.MaxPlayers,
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
-                        SequenceCounter = uint.MaxValue,
+                        // Must start at 1: PingRingBuffer uses seq=0 as the "empty" sentinel.
+                        // See MatchState.SequenceCounter for the full explanation.
+                        SequenceCounter = 1,
                         // Size Inputs by team-side slot count (MaxPlayers - NumSpectators).
                         // Why not MaxPlayers: when spectators are included in MaxPlayers,
                         // sizing Inputs by MaxPlayers leaves empty trailing slots that the
@@ -1256,7 +1258,7 @@ namespace OVS.Rollback.Core
             if (match.Inputs.Count > 0)
             {
                 int slotToClean = match.CleanupCursor % match.Inputs.Count;
-                match.CleanupCursor = slotToClean + 1;   // wrap is handled by mod above next tick
+                match.CleanupCursor++;   // monotonically increasing; mod above handles wrap
 
                 var histMap = match.Inputs[slotToClean];
                 if (histMap.Count > gameConfig.InputHistoryFrames)
