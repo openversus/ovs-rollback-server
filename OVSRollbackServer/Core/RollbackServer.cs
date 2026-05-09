@@ -37,6 +37,7 @@ namespace OVS.Rollback.Core
 
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
+        private readonly ConcurrentDictionary<IPEndPoint, PlayerInfo> _playersByEndpoint = new(IPEndPointComparer.Instance);
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
         private OVSMatchConfig? matchConfig = default;
         private ConcurrentBag<string> connections = new();
@@ -270,8 +271,7 @@ namespace OVS.Rollback.Core
                 }
                 else
                 {
-                    string key = $"{remote.Address}:{remote.Port}";
-                    if (_players.TryGetValue(key, out player) && player != null)
+                    if (_playersByEndpoint.TryGetValue(remote, out player) && player != null)
                         _matches.TryGetValue(player.MatchId, out match);
                 }
 
@@ -519,6 +519,9 @@ namespace OVS.Rollback.Core
 
             match.Players[key] = newPlayer;
             _players[key] = newPlayer;
+            _playersByEndpoint[remote] = newPlayer;
+            // Size the missed-input array to cover all peer slots now that we know MaxPlayers.
+            newPlayer.InitMissedInputs(match.MaxPlayers);
             ServerMetrics.PlayersConnected.Add(1);
             Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, newPlayer.PlayerId, newPlayer.PlayerName, newPlayer.PlayerCharacter, matchData.MatchId);
             _ = Events.SendPlayerConnectEvent(this, StatusEventArgs.CreateNew(
@@ -1123,9 +1126,10 @@ namespace OVS.Rollback.Core
             // Skip bot slots — bots don't send inputs, their input dict stays
             // empty, so iterating them would block the match forever.
             bool needMore = false;
+            bool hasBots = match.BotIndices.Count > 0;
             for (int i = 0; i < match.Inputs.Count; i++)
             {
-                if (match.BotIndices.Contains(i)) continue;
+                if (hasBots && match.BotIndices.Contains(i)) continue;
                 if (match.Inputs[i].Count < gameConfig.MinimumInputFrames) { needMore = true; break; }
             }
             if (needMore)
@@ -1178,7 +1182,8 @@ namespace OVS.Rollback.Core
 
                     uint lastAck = ws.AckedFrames[idx];
                     uint nextFrame = lastAck + 1;
-                    recipient.MissedInputs.TryGetValue((uint)idx, out uint missedCount);
+                    uint missedCount = (uint)idx < (uint)recipient.MissedInputs.Length
+                        ? recipient.MissedInputs[idx] : 0;
 
                     if (inputMap.TryGetValue(nextFrame, out uint firstInput))
                     {
@@ -1195,12 +1200,14 @@ namespace OVS.Rollback.Core
                             f++;
                             sentCount++;
                         }
-                        recipient.MissedInputs[(uint)idx] = 0;
+                        if ((uint)idx < (uint)recipient.MissedInputs.Length)
+                            recipient.MissedInputs[idx] = 0;
                     }
                     else if (missedCount < 10)
                     {
                         ws.Payload.StartFrame[idx] = lastAck;
-                        recipient.MissedInputs[(uint)idx] = missedCount + 1;
+                        if ((uint)idx < (uint)recipient.MissedInputs.Length)
+                            recipient.MissedInputs[idx] = missedCount + 1;
                         inputMap.TryGetValue(lastAck, out uint lastVal);
                         ws.Payload.InputPerFrame[idx].Add(lastVal);
                         ws.Payload.NumFrames[idx] = 1;
@@ -1241,19 +1248,23 @@ namespace OVS.Rollback.Core
                 SendPlayerInput(match, recipient, ws, playerSequence);
             }
 
-            // ── Input cleanup every N frames (no LINQ, no sort) ──
-            if (match.CurrentFrame % gameConfig.InputCleanupInterval == 0)
+            // ── Input cleanup: amortized round-robin, one player-slot per tick ──
+            // Instead of evicting all slots in a single 200-frame burst (which added
+            // ~29 µs every InputCleanupInterval ticks), we advance a cursor by one
+            // slot each tick and clean only that slot. Cost is spread evenly across
+            // every tick, eliminating worst-case latency spikes.
+            if (match.Inputs.Count > 0)
             {
-                uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames
-                    ? match.CurrentFrame - gameConfig.InputHistoryFrames
-                    : 0;
+                int slotToClean = match.CleanupCursor % match.Inputs.Count;
+                match.CleanupCursor = slotToClean + 1;   // wrap is handled by mod above next tick
 
-                for (int i = 0; i < match.Inputs.Count; i++)
+                var histMap = match.Inputs[slotToClean];
+                if (histMap.Count > gameConfig.InputHistoryFrames)
                 {
-                    var histMap = match.Inputs[i];
-                    if (histMap.Count <= gameConfig.InputHistoryFrames) continue;
+                    uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames
+                        ? match.CurrentFrame - gameConfig.InputHistoryFrames
+                        : 0;
 
-                    // ConcurrentDictionary enumeration is lock-free, no array allocated
                     foreach (var kvp in histMap)
                     {
                         if (kvp.Key < minKeep)
@@ -1290,42 +1301,42 @@ namespace OVS.Rollback.Core
                 ws.SerializeBuffer.AsSpan(0, serializedLen), ws.CompressBuffer);
 
             // ── Synchronous UDP send (non-blocking for small datagrams) ──
+            // Note: SendPlayerInput is called from the single-threaded Tick loop (one
+            // Task per match). The _sendLock is uncontended here and can be removed.
+            // SendServerMessage (cold path) retains its own lock for cold-path safety.
             long ts = Stopwatch.GetTimestamp();
-            lock (_sendLock)
+            try
             {
-                try
-                {
-                    _socket.SendTo(ws.CompressBuffer, 0, compressedLen,
-                        SocketFlags.None, player.EndPoint);
-                    ServerMetrics.PacketsSent.Add(1);
-                }
-                catch (SocketException ex)
-                {
-                    Log.SendFailed(_logger, player.PlayerIndex, player.MatchId, ex);
-                    _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
-                            description: "SendFailed",
-                            matchEvent: "ErrorInputSendFailed",
-                            matchDescription: $"Failed to send input message to Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} in match {player.MatchId}: {ex.Message}",
-                            matchKey: match.Key,
-                            matchPlayerId: player.PlayerId,
-                            exception: ex
-                            )
-                        );
-                    player.Disconnected = true;
-                    _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
-                            description: "PlayerDisconnect",
-                            matchEvent: "ErrorPlayerDisconnect",
-                            matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
-                            matchKey: match.Key,
-                            matchId: match.MatchId,
-                            matchNumPlayers: match.Players.Count,
-                            matchPlayerId: player.PlayerId,
-                            matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
-                            exception: ex
-                            )
-                        );
-                    return;
-                }
+                _socket.SendTo(ws.CompressBuffer, 0, compressedLen,
+                    SocketFlags.None, player.EndPoint);
+                ServerMetrics.PacketsSent.Add(1);
+            }
+            catch (SocketException ex)
+            {
+                Log.SendFailed(_logger, player.PlayerIndex, player.MatchId, ex);
+                _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
+                        description: "SendFailed",
+                        matchEvent: "ErrorInputSendFailed",
+                        matchDescription: $"Failed to send input message to Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} in match {player.MatchId}: {ex.Message}",
+                        matchKey: match.Key,
+                        matchPlayerId: player.PlayerId,
+                        exception: ex
+                        )
+                    );
+                player.Disconnected = true;
+                _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
+                        description: "PlayerDisconnect",
+                        matchEvent: "ErrorPlayerDisconnect",
+                        matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} was disconnected from match {player.MatchId} due to send failure: {ex.Message}",
+                        matchKey: match.Key,
+                        matchId: match.MatchId,
+                        matchNumPlayers: match.Players.Count,
+                        matchPlayerId: player.PlayerId,
+                        matchPlayerIds: [.. match.Players.Select(p => p.Value.PlayerId)],
+                        exception: ex
+                        )
+                    );
+                return;
             }
 
             player.LastSentTimestamp = ts;

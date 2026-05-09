@@ -72,5 +72,8 @@ namespace OVS.Rollback.Models
 
         // ── NEW: Pre-allocated tick workspace (object pooling) ──
         public TickWorkspace? Workspace { get; set; }
+
+        // ── Input-cleanup round-robin cursor: advances one slot per tick ──
+        public int CleanupCursor { get; set; }
     }
 }
