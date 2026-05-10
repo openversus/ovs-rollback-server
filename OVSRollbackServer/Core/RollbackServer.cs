@@ -437,34 +437,29 @@ namespace OVS.Rollback.Core
             }
             finally { _matchCreationLock.Release(); }
 
+            // Fast path: player already fully registered (retransmit / reconnect packet).
             if (_players.TryGetValue(key, out var existing))
             {
                 return existing;
             }
 
+            ushort payloadIndex = payload.PlayerData.PlayerIndex;
+
+            // Resolve player identity from match config.
             string playerID = "Unknown";
             string playerName = "Unknown";
             string playerCharacter = "Unknown";
-            ushort payloadIndex = payload.PlayerData.PlayerIndex;
 
-            if (match.Players.TryGetValue(key, out var existingPlayer))
+            if (match.Config != null)
             {
-                return match.Players[key];
-            }
-
-            else
-            {
-                if (match.Config != null)
+                foreach (OvsPlayer? player in match.Config.Players)
                 {
-                    foreach (OvsPlayer? player in match.Config.Players)
+                    if (player?.PlayerIndex == payloadIndex)
                     {
-                        if (player?.PlayerIndex == payloadIndex)
-                        {
-                            playerID = player?.PlayerId ?? "Unknown";
-                            playerName = player?.PlayerName ?? "Unknown";
-                            playerCharacter = player?.PlayerCharacter ?? "Unknown";
-                            break;
-                        }
+                        playerID = player?.PlayerId ?? "Unknown";
+                        playerName = player?.PlayerName ?? "Unknown";
+                        playerCharacter = player?.PlayerCharacter ?? "Unknown";
+                        break;
                     }
                 }
             }
@@ -510,7 +505,18 @@ namespace OVS.Rollback.Core
                 Rift = 0
             };
 
-            match.Players[key] = newPlayer;
+            // Atomically claim the player slot. If another task already registered
+            // this key (duplicate connection packet), GetOrAdd returns the winner's
+            // PlayerInfo instead of ours. In that case skip all side-effects to
+            // prevent duplicate join logs, events, and ping-phase starts.
+            var registered = match.Players.GetOrAdd(key, newPlayer);
+            if (!ReferenceEquals(registered, newPlayer))
+            {
+                // Lost the race — ensure _players is also up to date and return.
+                _players.TryAdd(key, registered);
+                return registered;
+            }
+
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
             Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, newPlayer.PlayerId, newPlayer.PlayerName, newPlayer.PlayerCharacter, matchData.MatchId);
@@ -539,7 +545,10 @@ namespace OVS.Rollback.Core
             // never increment match.ActualPlayers (which is derived from
             // match.Players runtime dict). Subtract them out of the expected
             // count, otherwise the ready check waits forever.
-            if (match.ActualPlayers == match.MaxPlayers - match.NumSpectators - match.NumBots)
+            // >= instead of == ensures late-arriving retransmits don't silently miss
+            // the threshold. TryStartPingPhase() inside StartPingPhase guarantees
+            // exactly one start regardless of how many times this branch is taken.
+            if (match.ActualPlayers >= match.MaxPlayers - match.NumSpectators - match.NumBots)
             {
                 StartPingPhase(match);
             }
@@ -553,8 +562,12 @@ namespace OVS.Rollback.Core
 
         private void StartPingPhase(MatchState match)
         {
-            var config = ServerConfiguration.Instance;
+            if (!match.TryStartPingPhase())
+            {
+                return;
+            }
 
+            var config = ServerConfiguration.Instance;
 
             Log.PingPhaseStarted(_logger, match.MatchId);
             _ = Events.SendPingPhaseEvent(this, StatusEventArgs.CreateNew(
@@ -573,6 +586,11 @@ namespace OVS.Rollback.Core
             timer = new Timer(_ => {
                 if (count >= config.PingPhase.TotalPings || !_running)
                 {
+                    // Stop the timer first so no further callbacks are queued
+                    // before we broadcast. Change() with Timeout.Infinite is
+                    // synchronous-safe: it prevents new ticks but does not
+                    // block on an already-running callback the way Dispose(WaitHandle) would.
+                    timer?.Change(Timeout.Infinite, Timeout.Infinite);
                     timer?.Dispose();
                     BroadcastPlayersConfiguration(match);
                     return;
@@ -600,6 +618,13 @@ namespace OVS.Rollback.Core
         }
         private void BroadcastPlayersConfiguration(MatchState match)
         {
+            // Exactly one broadcast per match lifetime. Guards against the timer
+            // disposal race and any other call site that might be added in future.
+            if (!match.TryBroadcastPlayersConfiguration())
+            {
+                return;
+            }
+
             //ReadOnlySpan<ushort> mapping = [0, 256, 513, 769];
             ReadOnlySpan<ushort> mapping = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
             //int count = match.Players.Count;

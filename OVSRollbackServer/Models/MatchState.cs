@@ -83,6 +83,26 @@ namespace OVS.Rollback.Models
         // ── Ping phase timer (prevents GC) ──
         public System.Threading.Timer? PingPhaseTimer { get; set; }
 
+        // ── Ping phase idempotence: 0 = not started, 1 = started ──
+        private int _pingPhaseStarted;
+        /// <summary>
+        /// Returns true the first time it is called; false on every subsequent call.
+        /// Ensures StartPingPhase executes exactly once per match even if multiple
+        /// connection packets arrive simultaneously.
+        /// </summary>
+        public bool TryStartPingPhase() => Interlocked.CompareExchange(ref _pingPhaseStarted, 1, 0) == 0;
+
+        // ── PlayersConfiguration broadcast idempotence: 0 = not sent, 1 = sent ──
+        // Guards against the Timer disposal race where a queued callback fires after
+        // the terminal tick has already broadcast the configuration.
+        private int _playersConfigurationBroadcast;
+        /// <summary>
+        /// Returns true the first time it is called; false on every subsequent call.
+        /// Ensures PlayersConfiguration is sent to clients exactly once per match.
+        /// </summary>
+        public bool TryBroadcastPlayersConfiguration() =>
+            Interlocked.CompareExchange(ref _playersConfigurationBroadcast, 1, 0) == 0;
+
         // ── Tick loop control ──
         private int _tickRunning;
         public bool IsTickRunning => Volatile.Read(ref _tickRunning) == 1;
