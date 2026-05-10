@@ -889,10 +889,21 @@ namespace OVS.Rollback.Core
                         }
                     }
 
+                    // Identify the reference player for logging clarity, even though we won't take any action against them.
+                    PlayerInfo? referencePlayer = null;
+                    foreach (var kvp in match.Players)
+                    {
+                        if (kvp.Value.PlayerIndex == referenceIndex)
+                        {
+                            referencePlayer = kvp.Value;
+                            break;
+                        }
+                    }
+
                     if (outlier is not null)
                     {
                         Log.DesyncDetected(_logger, frame,
-                            (ushort)referenceIndex, outlier.PlayerName, checksumA.ToString("X8"),
+                            (ushort)referenceIndex, referencePlayer?.PlayerName, checksumA.ToString("X8"),
                             (ushort)desyncIndex, outlier.PlayerName, checksumB.ToString("X8"));
 
                         if (outlier.FirstDesyncFrame == 0)
