@@ -419,7 +419,7 @@ namespace OVS.Rollback.Configuration
     public class GameLogicSettings
     {
         public int DisconnectTimeoutSeconds { get; set; } = 45;
-        public byte MaxInputsPerFrame { get; set; } = 30;
+        public byte MaxInputsPerFrame { get; set; } = 120;
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
         public int MinimumInputFrames { get; set; } = 5;
