@@ -101,9 +101,9 @@ namespace OVS.Rollback.Core
             // ── Warnings ──
 
             [LoggerMessage(EventId = 2000, Level = LogLevel.Warning,
-                Message = "{callerName}: DESYNC at frame {Frame}: player {PlayerA}={ChecksumA} vs player {PlayerB}={ChecksumB}")]
+                Message = "{callerName}: DESYNC at frame {Frame}: player (name: {PlayerNameA}) {PlayerA}={ChecksumA} vs player (name: {PlayerNameB}) {PlayerB}={ChecksumB}")]
             public static partial void DesyncDetected(ILogger logger, uint frame,
-                ushort playerA, string checksumA, ushort playerB, string checksumB, [CallerMemberName] string callerName = "");
+                ushort playerA, string PlayerNameA, string checksumA, ushort playerB, string PlayerNameB, string checksumB, [CallerMemberName] string callerName = "");
 
             [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
                 Message = "{callerName}: Bit-packing fallback: {Reason}")]

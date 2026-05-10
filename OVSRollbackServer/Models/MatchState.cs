@@ -44,6 +44,9 @@ namespace OVS.Rollback.Models
 
         public int ActualPlayers => Players.Count - NumSpectators;
 
+        // ── Match config (stored per-match so concurrent matches don't alias) ──
+        public OVSMatchConfig? Config { get; set; }
+
         // ── Bots: filled in from match config at /ovs_register time. Bots
         //    occupy PlayerIndex slots but never UDP-connect, so we exclude
         //    them from ready-checks and from input-buffering iteration.
@@ -55,6 +58,22 @@ namespace OVS.Rollback.Models
 
         // ── Desync detection: frame → (playerIndex → checksum) ──
         public ConcurrentDictionary<uint, ConcurrentDictionary<int, uint>> FrameChecksums { get; } = new();
+
+        // ── Highest frame where every non-spectator, non-bot player agreed on the
+        //    checksum. Sent back to clients as ChecksumAckFrame so they can free
+        //    rollback history older than this frame. Written atomically. ──
+        private uint _lastVerifiedFrame;
+        public uint LastVerifiedFrame => Volatile.Read(ref _lastVerifiedFrame);
+        public void TryAdvanceVerifiedFrame(uint frame)
+        {
+            uint current = Volatile.Read(ref _lastVerifiedFrame);
+            while (frame > current)
+            {
+                uint observed = Interlocked.CompareExchange(ref _lastVerifiedFrame, frame, current);
+                if (observed == current) break;
+                current = observed;
+            }
+        }
 
         // ── Sequence & ping tracking ──
         public uint SequenceCounter { get; set; } = uint.MaxValue;

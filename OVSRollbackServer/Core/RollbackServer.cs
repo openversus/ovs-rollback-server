@@ -38,7 +38,6 @@ namespace OVS.Rollback.Core
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
-        private OVSMatchConfig? matchConfig = default;
         private ConcurrentBag<string> connections = new();
 
         // ── Lifecycle ──
@@ -172,7 +171,6 @@ namespace OVS.Rollback.Core
             {
                 try
                 {
-
                     var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anyEp);
                     var remote = (IPEndPoint)result.RemoteEndPoint;
 
@@ -184,9 +182,30 @@ namespace OVS.Rollback.Core
 
                     ServerMetrics.PacketsReceived.Add(1);
 
-                    // Pass a span directly — HandleMessage is synchronous and completes
-                    // before the next ReceiveFromAsync call, so the buffer is stable.
-                    HandleMessage(buffer.AsSpan(0, result.ReceivedBytes), remote);
+                    int receivedBytes = result.ReceivedBytes;
+
+                    // Decompress into a fresh byte[] that is safe to hand off to any
+                    // async path (it is independent of the shared receive buffer).
+                    // For non-NewConnection messages the buffer is read synchronously
+                    // and we return to ReceiveFromAsync as fast as possible.
+                    byte[] decompressed;
+                    try { decompressed = CompressionHelper.Decompress(buffer.AsSpan(0, receivedBytes)); }
+                    catch { decompressed = buffer[..receivedBytes]; }
+
+                    if (decompressed.Length > 0 &&
+                        (ClientMessageType)decompressed[0] == ClientMessageType.NewConnection)
+                    {
+                        // Offload onto the thread pool — the HTTP fetch inside
+                        // HandleNewConnection can take tens to hundreds of milliseconds and
+                        // must not block the receive loop.
+                        _ = HandleNewConnectionMessage(decompressed, remote);
+                    }
+                    else
+                    {
+                        // Fast path: all other message types are synchronous and complete
+                        // in microseconds. The buffer is stable until the next await.
+                        HandleMessage(decompressed, remote);
+                    }
                 }
                 catch (OperationCanceledException) { break; }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { break; }
@@ -202,43 +221,43 @@ namespace OVS.Rollback.Core
         //  Message Dispatch
         // ═══════════════════════════════════════════
 
-        private void HandleMessage(ReadOnlySpan<byte> data, IPEndPoint remote)
+        /// <summary>
+        /// Handles a NewConnection packet. Runs on a thread-pool thread so that the
+        /// HTTP fetch inside <see cref="HandleNewConnection"/> does not block the UDP
+        /// receive loop. The caller must pass an already-decompressed, independently
+        /// owned byte array (not a slice of the shared receive buffer).
+        /// </summary>
+        private async Task HandleNewConnectionMessage(byte[] decompressed, IPEndPoint remote)
         {
             try
             {
-                // ── Hex dump of first 16 raw bytes for diagnosis ──
-                // string rawHex = Convert.ToHexString(data[..Math.Min(data.Length, 16)]);
-                //        _logger.LogDebug("Received {Len} bytes from {Remote} raw:[{Hex}]",
-                //            data.Length, remote, rawHex);
-
-                // ── Decompress with C++ catch-all pattern ──
-                //
-                //  C++ equivalent:
-                //    try { decompressedData = decompressData(receivedData); }
-                //    catch (...) { decompressedData = receivedData; }
-                //
-
-                byte[] decompressed;
-                try
+                var clientMsg = MessageSerializer.ParseClientMessage(decompressed);
+                if (clientMsg is null)
                 {
-                    decompressed = CompressionHelper.Decompress(data);
-                }
-                catch (Exception dex)
-                {
-                    // Matches C++: catch(...) { decompressedData = receivedData; }
-                    // Error path only — ToArray() here is acceptable.
-                    _logger.LogWarning(dex,
-                        "Decompress failed for {Len} bytes from {Remote}, using raw data",
-                        data.Length, remote);
-                    decompressed = data.ToArray();
+                    _logger.LogWarning(
+                        "ParseClientMessage returned null for NewConnection from {Remote}",
+                        remote);
+                    return;
                 }
 
-                // ── Hex dump of first 16 decompressed bytes ──
-                // string decHex = Convert.ToHexString(decompressed, 0, Math.Min(decompressed.Length, 16));
-                //        _logger.LogDebug(
-                //           "Decompressed {InLen}->{OutLen} bytes fallback={Fallback} dec:[{Hex}]",
-                //           length, decompressed.Length, usedRawFallback, decHex);
+                var payload = (NewConnectionPayload)clientMsg.Value.Payload;
+                await HandleNewConnection(payload, remote);
+            }
+            catch (Exception ex)
+            {
+                Log.HandleError(_logger, ex);
+            }
+        }
 
+        /// <summary>
+        /// Handles all non-NewConnection messages. Called synchronously on the UDP
+        /// receive loop thread. <paramref name="decompressed"/> is already decompressed
+        /// and owned by the caller (safe to read for the duration of this call).
+        /// </summary>
+        private void HandleMessage(byte[] decompressed, IPEndPoint remote)
+        {
+            try
+            {
                 var clientMsg = MessageSerializer.ParseClientMessage(decompressed);
                 if (clientMsg is null)
                 {
@@ -247,43 +266,20 @@ namespace OVS.Rollback.Core
                         "firstByte=0x{FirstByte:X2}",
                         decompressed.Length, remote,
                         decompressed.Length > 0 ? decompressed[0] : 0);
-
                     return;
                 }
-
-                //        _logger.LogDebug("Parsed {Type} seq={Seq} from {Remote}",
-                //           clientMsg.Value.Header.Type, clientMsg.Value.Header.Sequence, remote);
 
                 var header = clientMsg.Value.Header;
                 var type = header.Type;
 
-                MatchState? match = null;
-                PlayerInfo? player = null;
-
-                if (type == ClientMessageType.NewConnection)
-                {
-                    var payload = (NewConnectionPayload)clientMsg.Value.Payload;
-                    // NEW: Synchronous - HTTP fetch blocks but we're on ThreadPool already
-                    player = HandleNewConnection(payload, remote);
-                    if (player != null)
-                        _matches.TryGetValue(player.MatchId, out match);
-                }
-                else
-                {
-                    string key = $"{remote.Address}:{remote.Port}";
-                    if (_players.TryGetValue(key, out player) && player != null)
-                        _matches.TryGetValue(player.MatchId, out match);
-                }
-
-                if (player is null || match is null)
-                {
+                string key = $"{remote.Address}:{remote.Port}";
+                if (!_players.TryGetValue(key, out var player) || player is null)
                     return;
-                }
+                if (!_matches.TryGetValue(player.MatchId, out var match) || match is null)
+                    return;
 
                 if (header.Sequence <= player.LastSeqRecv)
-                {
                     return;
-                }
                 player.LastSeqRecv = header.Sequence;
 
                 if (type == ClientMessageType.QualityData)
@@ -345,14 +341,14 @@ namespace OVS.Rollback.Core
         //  Connection & Setup
         // ═══════════════════════════════════════════
 
-        private PlayerInfo? HandleNewConnection(
+        private async Task<PlayerInfo?> HandleNewConnection(
             NewConnectionPayload payload, IPEndPoint remote)
         {
             string key = $"{remote.Address}:{remote.Port}";
             var matchData = payload.MatchData;
 
             MatchState? match;
-            _matchCreationLock.Wait();  // Synchronous wait (was async)
+            await _matchCreationLock.WaitAsync();
             OVSMatchConfig? config = null;
 
             try
@@ -361,9 +357,7 @@ namespace OVS.Rollback.Core
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
 
-                    // Synchronous HTTP call - we're on ThreadPool, blocking is OK
-                    config = _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
-                        .GetAwaiter().GetResult();
+                    config = await _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key);
                     if (config is null)
                     {
                         Log.FetchConfigFailed(_logger, matchData.MatchId, new InvalidDataException("Match config is null."));
@@ -387,6 +381,7 @@ namespace OVS.Rollback.Core
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
                         SequenceCounter = uint.MaxValue,
+                        Config = config,
                         // Size Inputs by team-side slot count (MaxPlayers - NumSpectators).
                         // Why not MaxPlayers: when spectators are included in MaxPlayers,
                         // sizing Inputs by MaxPlayers leaves empty trailing slots that the
@@ -438,8 +433,6 @@ namespace OVS.Rollback.Core
                             matchPlayerIds: config.Players.Select(p => p.PlayerId).ToArray()
                         )
                     );
-
-                    matchConfig = config; // Store in server-level cache for quick access during player joins
                 }
             }
             finally { _matchCreationLock.Release(); }
@@ -461,9 +454,9 @@ namespace OVS.Rollback.Core
 
             else
             {
-                if (null != matchConfig && matchConfig != default)
+                if (match.Config != null)
                 {
-                    foreach (OvsPlayer? player in matchConfig.Players)
+                    foreach (OvsPlayer? player in match.Config.Players)
                     {
                         if (player?.PlayerIndex == payloadIndex)
                         {
@@ -631,10 +624,8 @@ namespace OVS.Rollback.Core
                 var configValues = new List<ushort>(match.MaxPlayers);
                 for (int i = 0; i < match.MaxPlayers; i++)
                 {
-                    //configValues.Add(mapping[i]);
-                    configValues.Add(mapping[i % (configValues.Capacity + 1)]);
+                    configValues.Add(mapping[i % mapping.Length]);
                 }
-                //configValues.Add(mapping[i % 4]);
 
                 var payload = new PlayersConfigurationDataPayload {
                     //NumPlayers = (byte)count,
@@ -764,6 +755,153 @@ namespace OVS.Rollback.Core
                 histMap.TryAdd(f, payload.InputPerFrame[i]);
             }
 
+            // ── Buffer per-frame checksums sent by this client ──
+            var config = ServerConfiguration.Instance;
+            if (config.DesyncDetection.EnableDesyncDetection)
+            {
+                for (byte i = 0; i < payload.NumChecksums && i < payload.ChecksumPerFrame.Count; i++)
+                {
+                    uint f = payload.StartFrame + i;
+                    uint checksum = payload.ChecksumPerFrame[i];
+
+                    // Per-player fast lookup (for cleanup)
+                    player.Checksums.TryAdd(f, checksum);
+
+                    // Cross-player map: frame → { playerIndex → checksum }
+                    var frameMap = match.FrameChecksums.GetOrAdd(
+                        f, _ => new ConcurrentDictionary<int, uint>());
+                    frameMap.TryAdd(player.PlayerIndex, checksum);
+                }
+
+                ProcessChecksums(match, player);
+            }
+        }
+
+        /// <summary>
+        /// Inspects every frame in <see cref="MatchState.FrameChecksums"/> that now has a
+        /// checksum from every active (non-spectator, non-bot) player, compares the values,
+        /// and takes the appropriate action:
+        /// <list type="bullet">
+        ///   <item>Agreement → advance <see cref="MatchState.LastVerifiedFrame"/> so the tick
+        ///     loop can echo it back to clients as <c>ChecksumAckFrame</c>.</item>
+        ///   <item>Disagreement → log the desync, increment the offending player's
+        ///     <see cref="PlayerInfo.DesyncCount"/>, and kick them if
+        ///     <see cref="DesyncDetectionSettings.MaxDesyncCount"/> is exceeded.</item>
+        /// </list>
+        /// Called from <see cref="HandleClientInput"/> on the thread-pool thread that owns
+        /// the incoming packet — never on the hot tick loop.
+        /// </summary>
+        private void ProcessChecksums(MatchState match, PlayerInfo triggeringPlayer)
+        {
+            var config = ServerConfiguration.Instance.DesyncDetection;
+
+            // Count how many non-spectator, non-bot players are expected to report.
+            int expectedPlayers = 0;
+            foreach (var kvp in match.Players)
+            {
+                if (!kvp.Value.IsSpectator && !match.BotIndices.Contains(kvp.Value.PlayerIndex))
+                    expectedPlayers++;
+            }
+
+            if (expectedPlayers < 2) return; // Nothing to compare with a single participant.
+
+            foreach (var frameEntry in match.FrameChecksums)
+            {
+                uint frame = frameEntry.Key;
+                var frameMap = frameEntry.Value;
+
+                // Only evaluate once all expected players have reported.
+                if (frameMap.Count < expectedPlayers) continue;
+
+                // Skip frames we have already verified.
+                if (frame <= match.LastVerifiedFrame) continue;
+
+                // Pick the first entry as the reference value.
+                uint referenceChecksum = 0;
+                int referenceIndex = -1;
+                bool desync = false;
+                int desyncIndex = -1;
+
+                foreach (var entry in frameMap)
+                {
+                    if (referenceIndex == -1)
+                    {
+                        referenceIndex = entry.Key;
+                        referenceChecksum = entry.Value;
+                        continue;
+                    }
+
+                    if (entry.Value != referenceChecksum)
+                    {
+                        desync = true;
+                        desyncIndex = entry.Key;
+                        break;
+                    }
+                }
+
+                if (!desync)
+                {
+                    // All players agreed — advance the verified frame watermark.
+                    match.TryAdvanceVerifiedFrame(frame);
+                    ServerMetrics.ChecksumsProcessed.Add(1);
+                }
+                else
+                {
+                    ServerMetrics.DesyncsDetected.Add(1);
+
+                    // Identify the outlier player by index for logging and kick decision.
+                    frameMap.TryGetValue(referenceIndex, out uint checksumA);
+                    frameMap.TryGetValue(desyncIndex, out uint checksumB);
+
+                    // Attribute the desync to the outlier player.
+                    PlayerInfo? outlier = null;
+                    foreach (var kvp in match.Players)
+                    {
+                        if (kvp.Value.PlayerIndex == desyncIndex)
+                        {
+                            outlier = kvp.Value;
+                            break;
+                        }
+                    }
+
+                    if (outlier is not null)
+                    {
+                        Log.DesyncDetected(_logger, frame,
+                            (ushort)referenceIndex, outlier.PlayerName, checksumA.ToString("X8"),
+                            (ushort)desyncIndex, outlier.PlayerName, checksumB.ToString("X8"));
+
+                        if (outlier.FirstDesyncFrame == 0)
+                            outlier.FirstDesyncFrame = frame;
+
+                        outlier.DesyncCount++;
+
+                        if (config.MaxDesyncCount > 0 &&
+                            outlier.DesyncCount >= config.MaxDesyncCount)
+                        {
+                            if (config.KickDesyncingPlayer)
+                            {
+                                var kickPayload = new KickPayload { Reason = 2 /* desync */, Param1 = frame };
+                                SendServerMessage(match, outlier, ServerMessageType.Kick, kickPayload);
+                                outlier.Disconnected = true;
+
+                                _logger.LogWarning(
+                                    "Kicked player {Index} (name: {PlayerName}) from match {MatchId} after {Count} desyncs " +
+                                    "(first at frame {First})",
+                                    outlier.PlayerIndex, outlier.PlayerName, match.MatchId,
+                                    outlier.DesyncCount, outlier.FirstDesyncFrame);
+                            }
+                            else
+                            {
+                                _logger.LogWarning(
+                                    "Would kick player {Index} (name: {PlayerName}) from match {MatchId} after {Count} desyncs " +
+                                    "(first at frame {First})",
+                                    outlier.PlayerIndex, outlier.PlayerName, match.MatchId,
+                                    outlier.DesyncCount, outlier.FirstDesyncFrame);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -1197,7 +1335,7 @@ namespace OVS.Rollback.Core
                         }
                         recipient.MissedInputs[(uint)idx] = 0;
                     }
-                    else if (missedCount < 10)
+                    else if (missedCount < gameConfig.MissToleranceFrames)
                     {
                         ws.Payload.StartFrame[idx] = lastAck;
                         recipient.MissedInputs[(uint)idx] = missedCount + 1;
@@ -1226,7 +1364,7 @@ namespace OVS.Rollback.Core
                             f++;
                         }
                         ws.Payload.NumFrames[idx] = (byte)predictedCount;
-                        numPredictedOverrides = (ushort)predictedCount;
+                        numPredictedOverrides += (ushort)predictedCount;
                         ServerMetrics.InputPredictions.Add(predictedCount);
                     }
                 }
@@ -1235,6 +1373,7 @@ namespace OVS.Rollback.Core
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
                 ws.Payload.Rift = smoothRift;
+                ws.Payload.ChecksumAckFrame = match.LastVerifiedFrame;
 
                 // ── Zero-alloc serialize → compress → send (with pre-allocated sequence) ──
                 uint playerSequence = sequenceBase + (uint)r;
@@ -1258,6 +1397,33 @@ namespace OVS.Rollback.Core
                     {
                         if (kvp.Key < minKeep)
                             histMap.TryRemove(kvp.Key, out _);
+                    }
+                }
+            }
+
+            // ── Checksum cleanup every N frames ──
+            var desyncConfig = config.DesyncDetection;
+            if (desyncConfig.EnableDesyncDetection &&
+                match.CurrentFrame % desyncConfig.ChecksumCleanupInterval == 0)
+            {
+                uint minKeepChecksum = match.CurrentFrame > desyncConfig.ChecksumRetentionFrames
+                    ? match.CurrentFrame - desyncConfig.ChecksumRetentionFrames
+                    : 0;
+
+                foreach (var kvp in match.FrameChecksums)
+                {
+                    if (kvp.Key < minKeepChecksum)
+                        match.FrameChecksums.TryRemove(kvp.Key, out _);
+                }
+
+                // Also prune each player's per-player lookup.
+                for (int p = 0; p < ws.PlayerCount; p++)
+                {
+                    var player = ws.PlayerSnapshot[p].Value;
+                    foreach (var kvp in player.Checksums)
+                    {
+                        if (kvp.Key < minKeepChecksum)
+                            player.Checksums.TryRemove(kvp.Key, out _);
                     }
                 }
             }

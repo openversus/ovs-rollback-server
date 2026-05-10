@@ -48,12 +48,10 @@ namespace OVS.Rollback.Models
         public ConcurrentDictionary<uint, uint> MissedInputs { get; } = new();
         public ConcurrentDictionary<uint, long> PendingPings { get; } = new();
 
-        // ── Future: Desync detection (not yet implemented) ──
-        #pragma warning disable CS0649 // Field is never assigned to
+        // ── Desync detection ──
         public ConcurrentDictionary<uint, uint> Checksums { get; } = new();
         public int DesyncCount { get; set; }
         public uint FirstDesyncFrame { get; set; }
-        #pragma warning restore CS0649
 
         // ── Future: Input rate limiting (not yet implemented) ──
         #pragma warning disable CS0649 // Field is never assigned to
