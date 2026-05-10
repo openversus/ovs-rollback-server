@@ -88,8 +88,8 @@ namespace OVS.Rollback.Core
             // ── Rift ──
 
             [LoggerMessage(EventId = 1400, Level = LogLevel.Information,
-                Message = "{callerName}: MatchID: {matchID} PIndex:{PlayerIndex} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
-            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex,
+                Message = "{callerName}: MatchID: {matchID} PIndex:{PlayerIndex} NAME:{playerName} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
+            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex, string playerName,
                 short ping, float smoothRift, float rawRift, float clientFrame, uint serverFrame, [CallerMemberName] string callerName = "");
 
             // ── Tick Performance ──

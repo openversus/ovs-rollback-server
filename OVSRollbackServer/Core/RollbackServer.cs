@@ -1041,7 +1041,7 @@ namespace OVS.Rollback.Core
             if (player.SmoothRift > 1 || player.SmoothRift < -1 || player.SmoothedPing > 254)
             {
                 Log.RiftInfo(_logger,
-                    player.MatchId, player.PlayerIndex, player.Ping, player.SmoothRift,
+                    player.MatchId, player.PlayerIndex, player.PlayerName, player.Ping, player.SmoothRift,
                     player.Rift, predictedClientFrame, serverFrame);
             }
         }
