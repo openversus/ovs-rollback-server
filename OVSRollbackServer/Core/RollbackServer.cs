@@ -278,9 +278,20 @@ namespace OVS.Rollback.Core
                 if (!_matches.TryGetValue(player.MatchId, out var match) || match is null)
                     return;
 
-                if (header.Sequence <= player.LastSeqRecv)
-                    return;
-                player.LastSeqRecv = header.Sequence;
+                // Input packets carry frame-keyed data and must never be dropped by
+                // the sequence gate. Out-of-order delivery during lag-spike recovery
+                // causes burst packets with lower sequence numbers to arrive after a
+                // higher-sequence packet, permanently dropping frame history and
+                // causing permanent desync. Deduplication for Input is handled by
+                // TryAdd on the per-frame input dictionary in HandleClientInput.
+                // All other message types are idempotent or time-sensitive (ping,
+                // ack, ready, disconnect) and correctly discarded when out of order.
+                if (type != ClientMessageType.Input)
+                {
+                    if (header.Sequence <= player.LastSeqRecv)
+                        return;
+                    player.LastSeqRecv = header.Sequence;
+                }
 
                 if (type == ClientMessageType.QualityData)
                 {
