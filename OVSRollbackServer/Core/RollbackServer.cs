@@ -852,30 +852,51 @@ namespace OVS.Rollback.Core
                 // Skip frames we have already verified.
                 if (frame <= match.LastVerifiedFrame) continue;
 
-                // Pick the first entry as the reference value.
-                uint referenceChecksum = 0;
-                int referenceIndex = -1;
-                bool desync = false;
-                int desyncIndex = -1;
-
+                // ── Majority-vote: find the checksum held by the most players ──
+                // Frequency map: checksum value → count of players reporting it.
+                // Heap allocation is acceptable here; ProcessChecksums runs off the
+                // hot tick path (called from the UDP receive handler thread-pool).
+                var freq = new Dictionary<uint, int>(frameMap.Count);
                 foreach (var entry in frameMap)
                 {
-                    if (referenceIndex == -1)
-                    {
-                        referenceIndex = entry.Key;
-                        referenceChecksum = entry.Value;
-                        continue;
-                    }
-
-                    if (entry.Value != referenceChecksum)
-                    {
-                        desync = true;
-                        desyncIndex = entry.Key;
-                        break;
-                    }
+                    freq.TryGetValue(entry.Value, out int c);
+                    freq[entry.Value] = c + 1;
                 }
 
-                if (!desync)
+                // Find the top vote count, then check whether multiple checksum
+                // groups share it. A tie is always the case in a 2-player match
+                // (1-1) and can occur in larger lobbies with even splits (2-2, etc.).
+                int maxCount = 0;
+                foreach (var kv in freq)
+                    if (kv.Value > maxCount) maxCount = kv.Value;
+
+                int tiedGroupCount = 0;
+                foreach (var kv in freq)
+                    if (kv.Value == maxCount) tiedGroupCount++;
+
+                uint trustedChecksum;
+                if (tiedGroupCount == 1)
+                {
+                    // Clear majority — use it directly.
+                    trustedChecksum = 0;
+                    foreach (var kv in freq)
+                    {
+                        if (kv.Value == maxCount) { trustedChecksum = kv.Key; break; }
+                    }
+                }
+                else
+                {
+                    // Tie: 2-player match (always 1-1) or larger even split (2-2, etc.).
+                    // Fall back to connection-quality tiebreaking: trust the checksum
+                    // reported by the player with the best combined ping + rift score.
+                    // A player with a consistently low-latency, low-rift connection is
+                    // more likely to have an accurate, stable simulation state.
+                    trustedChecksum = ResolveChecksumTie(match, frameMap, freq, maxCount);
+                }
+
+                bool anyDesync = maxCount < expectedPlayers;
+
+                if (!anyDesync)
                 {
                     // All players agreed — advance the verified frame watermark.
                     match.TryAdvanceVerifiedFrame(frame);
@@ -885,37 +906,33 @@ namespace OVS.Rollback.Core
                 {
                     ServerMetrics.DesyncsDetected.Add(1);
 
-                    // Identify the outlier player by index for logging and kick decision.
-                    frameMap.TryGetValue(referenceIndex, out uint checksumA);
-                    frameMap.TryGetValue(desyncIndex, out uint checksumB);
+                    // Find the most trusted player on the winning side for log context.
+                    PlayerInfo? trustedPlayer = FindBestQualityPlayerForChecksum(
+                        match, frameMap, trustedChecksum);
 
-                    // Attribute the desync to the outlier player.
-                    PlayerInfo? outlier = null;
-                    foreach (var kvp in match.Players)
+                    // Flag every player whose checksum doesn't match the trusted one.
+                    foreach (var entry in frameMap)
                     {
-                        if (kvp.Value.PlayerIndex == desyncIndex)
+                        if (entry.Value == trustedChecksum) continue;
+
+                        int outlierIndex = entry.Key;
+                        uint outlierChecksum = entry.Value;
+
+                        PlayerInfo? outlier = null;
+                        foreach (var kvp in match.Players)
                         {
-                            outlier = kvp.Value;
-                            break;
+                            if (kvp.Value.PlayerIndex == outlierIndex)
+                            {
+                                outlier = kvp.Value;
+                                break;
+                            }
                         }
-                    }
 
-                    // Identify the reference player for logging clarity, even though we won't take any action against them.
-                    PlayerInfo? referencePlayer = null;
-                    foreach (var kvp in match.Players)
-                    {
-                        if (kvp.Value.PlayerIndex == referenceIndex)
-                        {
-                            referencePlayer = kvp.Value;
-                            break;
-                        }
-                    }
+                        if (outlier is null) continue;
 
-                    if (outlier is not null)
-                    {
                         Log.DesyncDetected(_logger, frame,
-                            (ushort)referenceIndex, referencePlayer?.PlayerName, checksumA.ToString("X8"),
-                            (ushort)desyncIndex, outlier.PlayerName, checksumB.ToString("X8"));
+                            (ushort)(trustedPlayer?.PlayerIndex ?? 0), trustedPlayer?.PlayerName, trustedChecksum.ToString("X8"),
+                            (ushort)outlierIndex, outlier.PlayerName, outlierChecksum.ToString("X8"));
 
                         if (outlier.FirstDesyncFrame == 0)
                             outlier.FirstDesyncFrame = frame;
@@ -947,6 +964,179 @@ namespace OVS.Rollback.Core
                             }
                         }
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Resolves a checksum tie by returning the checksum reported by the player with
+        /// the best connection quality among all players in the tied groups.
+        ///
+        /// Tiebreaker score = <c>PingVariance + RiftVariance × TargetFrameTime²</c> — the
+        /// sum of the two population variances accumulated via Welford's algorithm over
+        /// the whole match. Lower = more stable connection and simulation over time.
+        /// Falls back to the instantaneous score when fewer than
+        /// <see cref="PlayerInfo.VarianceMinSamples"/> samples have been collected (e.g. a
+        /// desync on the very first frames of the match).
+        /// This covers the 2-player case (always 1-1) and any larger even split
+        /// (2-2 in a 4-player lobby, etc.).
+        /// </summary>
+        private uint ResolveChecksumTie(
+            MatchState match,
+            ConcurrentDictionary<int, uint> frameMap,
+            Dictionary<uint, int> freq,
+            int maxCount)
+        {
+            double bestScore = double.MaxValue;
+            uint bestChecksum = 0;
+            bool found = false;
+
+            foreach (var kvp in match.Players)
+            {
+                var player = kvp.Value;
+                if (player.IsSpectator) continue;
+                if (!frameMap.TryGetValue(player.PlayerIndex, out uint playerChecksum)) continue;
+
+                // Only consider players whose checksum belongs to one of the tied groups.
+                if (!freq.TryGetValue(playerChecksum, out int groupCount)) continue;
+                if (groupCount != maxCount) continue;
+
+                double score = ConnectionStabilityScore(player);
+
+                if (!found || score < bestScore)
+                {
+                    bestScore = score;
+                    bestChecksum = playerChecksum;
+                    found = true;
+                }
+            }
+
+            return bestChecksum;
+        }
+
+        /// <summary>
+        /// Returns the player on the trusted (majority/winning) side who has the best
+        /// connection quality, for use as the reference player in desync log messages.
+        /// Returns <see langword="null"/> if no matching player is found.
+        /// </summary>
+        private PlayerInfo? FindBestQualityPlayerForChecksum(
+            MatchState match,
+            ConcurrentDictionary<int, uint> frameMap,
+            uint targetChecksum)
+        {
+            double bestScore = double.MaxValue;
+            PlayerInfo? best = null;
+
+            foreach (var kvp in match.Players)
+            {
+                var player = kvp.Value;
+                if (player.IsSpectator) continue;
+                if (!frameMap.TryGetValue(player.PlayerIndex, out uint playerChecksum)) continue;
+                if (playerChecksum != targetChecksum) continue;
+
+                double score = ConnectionStabilityScore(player);
+                if (best is null || score < bestScore)
+                {
+                    bestScore = score;
+                    best = player;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Returns a scalar score representing a player's connection and simulation
+        /// stability over the lifetime of the match. Lower = more stable = more trusted.
+        ///
+        /// Primary metric (when enough samples exist): Welford population variance of
+        /// <see cref="PlayerInfo.SmoothedPing"/> (ms²) plus Welford population variance
+        /// of <see cref="PlayerInfo.SmoothRift"/> (frames²) scaled to ms² by multiplying
+        /// by <c>TargetFrameTime²</c>. Both terms are then on the same ms² scale so
+        /// neither dominates unfairly.
+        ///
+        /// Fallback (fewer than <see cref="PlayerInfo.VarianceMinSamples"/> samples):
+        /// instantaneous score <c>SmoothedPing + |SmoothRift| × TargetFrameTime</c>,
+        /// shifted to a high range so it never beats a player with real variance data.
+        /// </summary>
+        private double ConnectionStabilityScore(PlayerInfo player)
+        {
+            bool hasPingVariance = player.PingVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
+            bool hasRiftVariance = player.RiftVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
+
+            if (hasPingVariance && hasRiftVariance)
+            {
+                // Scale rift variance (frames²) → ms² so the two terms are comparable.
+                double riftVarianceMs2 = player.RiftVariance * TargetFrameTime * TargetFrameTime;
+                return player.PingVariance + riftVarianceMs2;
+            }
+
+            // Fallback: instantaneous quality, offset above any realistic variance score
+            // so a player with match-long data always wins the tiebreak.
+            const double FallbackOffset = 1_000_000.0;
+            return FallbackOffset + player.SmoothedPing + MathF.Abs(player.SmoothRift) * TargetFrameTime;
+        }
+
+        // ═══════════════════════════════════════════
+        //  History Pruning
+        // ═══════════════════════════════════════════
+
+        /// <summary>
+        /// Removes input entries older than <c>LastVerifiedFrame - retentionFrames</c>
+        /// from every player's input history dictionary.
+        ///
+        /// Called periodically from <see cref="RunTickLoop"/> via the
+        /// <c>InputCleanupInterval</c> gate. Bounding input history prevents the
+        /// per-player <see cref="ConcurrentDictionary{TKey,TValue}"/> from growing
+        /// indefinitely over a long match (~29,000 entries at 60fps / 8 minutes).
+        /// </summary>
+        private void PruneInputHistory(MatchState match, uint retentionFrames)
+        {
+            uint verified = match.LastVerifiedFrame;
+            if (verified < retentionFrames) return; // Not enough frames verified yet.
+
+            uint cutoff = verified - retentionFrames;
+
+            foreach (var inputMap in match.Inputs)
+            {
+                foreach (var key in inputMap.Keys)
+                {
+                    if (key < cutoff)
+                        inputMap.TryRemove(key, out _);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Removes checksum entries older than <c>LastVerifiedFrame - retentionFrames</c>
+        /// from <see cref="MatchState.FrameChecksums"/> and from each player's
+        /// <see cref="PlayerInfo.Checksums"/> dictionary.
+        ///
+        /// Called periodically from <see cref="RunTickLoop"/> via the
+        /// <c>ChecksumCleanupInterval</c> gate. Without pruning,
+        /// <see cref="ProcessChecksums"/> must scan the entire history every time
+        /// any client sends input, making it O(n frames) per packet.
+        /// </summary>
+        private void PruneChecksumHistory(MatchState match, uint retentionFrames)
+        {
+            uint verified = match.LastVerifiedFrame;
+            if (verified < retentionFrames) return;
+
+            uint cutoff = verified - retentionFrames;
+
+            foreach (var key in match.FrameChecksums.Keys)
+            {
+                if (key < cutoff)
+                    match.FrameChecksums.TryRemove(key, out _);
+            }
+
+            foreach (var kvp in match.Players)
+            {
+                var checksums = kvp.Value.Checksums;
+                foreach (var key in checksums.Keys)
+                {
+                    if (key < cutoff)
+                        checksums.TryRemove(key, out _);
                 }
             }
         }
@@ -1037,6 +1227,29 @@ namespace OVS.Rollback.Core
             player.Ping = (short)player.SmoothedPing;
             player.HasNewPing = false;
             player.HasNewFrame = false;
+
+            // ── Welford online variance: ping ──
+            // One sample per committed ping update (same cadence as SmoothedPing).
+            // Written under player.Lock (held by the caller), so no extra synchronisation.
+            {
+                player.PingVarianceSampleCount++;
+                double delta  = player.SmoothedPing - player.PingVarianceMean;
+                player.PingVarianceMean += delta / player.PingVarianceSampleCount;
+                double delta2 = player.SmoothedPing - player.PingVarianceMean;
+                player.PingVarianceM2 += delta * delta2;
+            }
+
+            // ── Welford online variance: rift ──
+            // Use the absolute rift error so the variance reflects deviation magnitude
+            // regardless of direction (ahead vs. behind).
+            {
+                double sample = MathF.Abs(player.SmoothRift);
+                player.RiftVarianceSampleCount++;
+                double delta  = sample - player.RiftVarianceMean;
+                player.RiftVarianceMean += delta / player.RiftVarianceSampleCount;
+                double delta2 = sample - player.RiftVarianceMean;
+                player.RiftVarianceM2 += delta * delta2;
+            }
 
             // Metrics — read-only, after all state mutations
             ServerMetrics.RiftValue.Record(player.SmoothRift);
@@ -1247,6 +1460,23 @@ namespace OVS.Rollback.Core
                             matchPlayerIds: match.Players.Select(p => p.Value.PlayerId).ToArray()
                             )
                         );
+                }
+
+                // ── Periodic history pruning ──
+                // Both prune helpers are cheap no-ops when the watermark hasn't
+                // advanced far enough; the modulo gate keeps them off the hot path.
+                uint currentFrame = match.CurrentFrame;
+                if (config.GameLogic.InputCleanupInterval > 0 &&
+                    currentFrame % config.GameLogic.InputCleanupInterval == 0)
+                {
+                    PruneInputHistory(match, config.GameLogic.InputHistoryFrames);
+                }
+
+                if (config.DesyncDetection.EnableDesyncDetection &&
+                    config.DesyncDetection.ChecksumCleanupInterval > 0 &&
+                    currentFrame % config.DesyncDetection.ChecksumCleanupInterval == 0)
+                {
+                    PruneChecksumHistory(match, config.DesyncDetection.ChecksumRetentionFrames);
                 }
             }
         }

@@ -53,6 +53,38 @@ namespace OVS.Rollback.Models
         public int DesyncCount { get; set; }
         public uint FirstDesyncFrame { get; set; }
 
+        // ── Connection stability (Welford online variance) ──
+        // Updated every time CalcRiftVariableTick commits a ping/rift sample.
+        // Welford's algorithm: maintains a running mean (M1) and sum of squared
+        // deviations (M2) with no stored history and zero extra allocations.
+        // Variance = M2 / count; lower = more stable connection / simulation.
+        // Both accumulators are only written inside CalcRiftVariableTick while
+        // player.Lock is held, so no additional synchronisation is needed.
+        public long   PingVarianceSampleCount { get; set; }
+        public double PingVarianceMean        { get; set; }
+        public double PingVarianceM2          { get; set; }
+
+        public long   RiftVarianceSampleCount { get; set; }
+        public double RiftVarianceMean        { get; set; }
+        public double RiftVarianceM2          { get; set; }
+
+        // Minimum samples before variance is considered reliable enough to use
+        // as a tiebreaker. Below this threshold the fallback (instantaneous score)
+        // is used so early-match desyncs aren't decided by a single data point.
+        public const int VarianceMinSamples = 10;
+
+        /// <summary>Ping variance (population). Returns <see cref="double.MaxValue"/> when
+        /// fewer than <see cref="VarianceMinSamples"/> samples have been collected.</summary>
+        public double PingVariance => PingVarianceSampleCount >= VarianceMinSamples
+            ? PingVarianceM2 / PingVarianceSampleCount
+            : double.MaxValue;
+
+        /// <summary>Rift variance (population). Returns <see cref="double.MaxValue"/> when
+        /// fewer than <see cref="VarianceMinSamples"/> samples have been collected.</summary>
+        public double RiftVariance => RiftVarianceSampleCount >= VarianceMinSamples
+            ? RiftVarianceM2 / RiftVarianceSampleCount
+            : double.MaxValue;
+
         // ── Future: Input rate limiting (not yet implemented) ──
         #pragma warning disable CS0649 // Field is never assigned to
         public int InputsSentThisSecond { get; set; }
