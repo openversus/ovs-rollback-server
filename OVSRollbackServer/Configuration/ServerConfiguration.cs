@@ -447,9 +447,9 @@ namespace OVS.Rollback.Configuration
         /// converges. This prevents sluggish correction for high-latency cross-region
         /// players (hi Jenettee, Pumba, Milkman, Dills, and Rainbows) where rift diverges
         /// faster than the update interval can track. Measured in frames.
-        /// Default: 1.5 frames (~25ms at 60fps).
+        /// Default: 2.1 frames (~25ms at 60fps).
         /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 1.5f;
+        public float FastConvergenceThreshold { get; set; } = 2.1f;
     }
 
     public class PingPhaseSettings
