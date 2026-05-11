@@ -246,6 +246,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             desyncDetectionSettings.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", desyncDetectionSettings.EnableDesyncDetection);
+            desyncDetectionSettings.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", desyncDetectionSettings.KickDesyncingPlayer);
             desyncDetectionSettings.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", desyncDetectionSettings.ChecksumRetentionFrames);
             desyncDetectionSettings.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", desyncDetectionSettings.ChecksumCleanupInterval);
             desyncDetectionSettings.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", desyncDetectionSettings.MaxDesyncCount);
@@ -296,7 +297,8 @@ namespace OVS.Rollback.Configuration
             Performance.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", Performance.UseAdaptiveSpinThreshold);
             Performance.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", Performance.MetricsSamplingInterval);
             Performance.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", Performance.TargetFrameRate);
-            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", Performance.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
+            // Env var is in MB; default 1024 MB. Avoid re-multiplying the already-byte-valued field.
+            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
 
             // Networking settings
             Networking.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", Networking.ReceiveBufferSize);
@@ -311,6 +313,7 @@ namespace OVS.Rollback.Configuration
             GameLogic.InputHistoryFrames = GetEnvUInt("GameLogic__InputHistoryFrames", GameLogic.InputHistoryFrames);
             GameLogic.InputCleanupInterval = GetEnvUInt("GameLogic__InputCleanupInterval", GameLogic.InputCleanupInterval);
             GameLogic.MinimumInputFrames = GetEnvInt("GameLogic__MinimumInputFrames", GameLogic.MinimumInputFrames);
+            GameLogic.MissToleranceFrames = GetEnvInt("GameLogic__MissToleranceFrames", GameLogic.MissToleranceFrames);
 
             // Rift calculation settings
             RiftCalculation.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", RiftCalculation.PingAlpha);
@@ -334,6 +337,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             DesyncDetection.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", DesyncDetection.EnableDesyncDetection);
+            DesyncDetection.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", DesyncDetection.KickDesyncingPlayer);
             DesyncDetection.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", DesyncDetection.ChecksumRetentionFrames);
             DesyncDetection.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", DesyncDetection.ChecksumCleanupInterval);
             DesyncDetection.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", DesyncDetection.MaxDesyncCount);
@@ -415,10 +419,17 @@ namespace OVS.Rollback.Configuration
     public class GameLogicSettings
     {
         public int DisconnectTimeoutSeconds { get; set; } = 45;
-        public byte MaxInputsPerFrame { get; set; } = 30;
+        public byte MaxInputsPerFrame { get; set; } = 120;
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
         public int MinimumInputFrames { get; set; } = 5;
+        /// <summary>
+        /// How many consecutive ticks the server will re-send a player's last known
+        /// input before switching to <see cref="InputPredictor"/>. Lower values make
+        /// opponents feel more responsive during packet loss at the cost of more
+        /// rollbacks. 3 frames (~50ms at 60fps) is appropriate for platform fighters.
+        /// </summary>
+        public int MissToleranceFrames { get; set; } = 3;
     }
 
     public class RiftCalculationSettings
@@ -426,7 +437,7 @@ namespace OVS.Rollback.Configuration
         public float PingAlpha { get; set; } = 0.15f;
         public float RiftAlpha { get; set; } = 0.08f;
         public float MaxRiftDeviation { get; set; } = 20.0f;
-        public float TargetRift { get; set; } = 0.5f;
+        public float TargetRift { get; set; } = 2.0f;
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
@@ -436,9 +447,9 @@ namespace OVS.Rollback.Configuration
         /// converges. This prevents sluggish correction for high-latency cross-region
         /// players (hi Jenettee, Pumba, Milkman, Dills, and Rainbows) where rift diverges
         /// faster than the update interval can track. Measured in frames.
-        /// Default: 1.5 frames (~25ms at 60fps).
+        /// Default: 2.5 frames (~42ms at 60fps).
         /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 1.5f;
+        public float FastConvergenceThreshold { get; set; } = 2.5f;
     }
 
     public class PingPhaseSettings
@@ -458,6 +469,7 @@ namespace OVS.Rollback.Configuration
     public class DesyncDetectionSettings
     {
         public bool EnableDesyncDetection { get; set; } = true;
+        public bool KickDesyncingPlayer { get; set; } = false;
         public uint ChecksumRetentionFrames { get; set; } = 300;
         public uint ChecksumCleanupInterval { get; set; } = 200;
         public int MaxDesyncCount { get; set; } = 10;
