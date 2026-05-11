@@ -1193,7 +1193,7 @@ namespace OVS.Rollback.Core
             float riftError = rawRift - dynamicTargetRift;
 
             // Apply the update interval gate only when the player is already near the
-            // target. When divergence exceeds FastConvergenceThreshold (e.g. 1.5 frames),
+            // target. When divergence exceeds FastConvergenceThreshold (e.g. 2.5 frames),
             // correct every tick regardless of the interval — high-latency cross-region
             // players can drift faster than a coarse update interval can track.
             bool largeDeviation = MathF.Abs(riftError) >= config.RiftCalculation.FastConvergenceThreshold;
