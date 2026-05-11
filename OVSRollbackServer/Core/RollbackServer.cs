@@ -1631,12 +1631,22 @@ namespace OVS.Rollback.Core
                         while (f < lastClientFrame && predictedCount < MaxInputsPerFrame)
                         {
                             uint framesMissed = f - lastAck;
-                            // Do NOT write into inputMap — a real input for this frame may
-                            // still arrive and TryAdd would silently lose it if we pre-fill here.
-                            // Predictions are scratch-only: they live in the outbound payload
-                            // for this tick and are discarded when the next tick begins.
-                            ws.Payload.InputPerFrame[idx].Add(
-                                InputPredictor.Predict(lastKnownInput, framesMissed));
+                            // Prefer a real input for frame f if one has since arrived
+                            // (can happen for frames beyond nextFrame in a burst-recovery packet).
+                            // Fall back to a prediction and commit it via TryAdd so that
+                            // AckedFrames can advance past this frame. Without committing the
+                            // prediction, the client acks the ephemeral prediction and
+                            // AckedFrames advances, but the server's nextFrame jumps past any
+                            // real inputs that subsequently arrive for these frames — they are
+                            // never forwarded and eventually pruned, causing a permanent desync.
+                            // TryAdd is safe here: it will not overwrite a real input that
+                            // arrived between the start of this tick and this point.
+                            if (!inputMap.TryGetValue(f, out uint toSend))
+                            {
+                                toSend = InputPredictor.Predict(lastKnownInput, framesMissed);
+                                inputMap.TryAdd(f, toSend);
+                            }
+                            ws.Payload.InputPerFrame[idx].Add(toSend);
                             predictedCount++;
                             f++;
                         }
