@@ -75,6 +75,22 @@ namespace OVS.Rollback.Models
             }
         }
 
+        // ── Highest frame fully handled by checksum evaluation (verified or desynced).
+        //    Prevents re-processing completed frames on subsequent ProcessChecksums calls,
+        //    and anchors checksum pruning even when desyncs stall LastVerifiedFrame. ──
+        private uint _lastHandledChecksumFrame;
+        public uint LastHandledChecksumFrame => Volatile.Read(ref _lastHandledChecksumFrame);
+        public void TryAdvanceHandledChecksumFrame(uint frame)
+        {
+            uint current = Volatile.Read(ref _lastHandledChecksumFrame);
+            while (frame > current)
+            {
+                uint observed = Interlocked.CompareExchange(ref _lastHandledChecksumFrame, frame, current);
+                if (observed == current) break;
+                current = observed;
+            }
+        }
+
         // ── Sequence & ping tracking ──
         public uint SequenceCounter { get; set; } = uint.MaxValue;
         public uint PingPhaseCount { get; set; }

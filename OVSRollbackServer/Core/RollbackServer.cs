@@ -190,7 +190,11 @@ namespace OVS.Rollback.Core
                     // and we return to ReceiveFromAsync as fast as possible.
                     byte[] decompressed;
                     try { decompressed = CompressionHelper.Decompress(buffer.AsSpan(0, receivedBytes)); }
-                    catch { decompressed = buffer[..receivedBytes]; }
+                    catch (Exception ex)
+                    {
+                        Log.DecompressionFailed(_logger, ex, receivedBytes, remote.ToString());
+                        decompressed = buffer[..receivedBytes];
+                    }
 
                     if (decompressed.Length > 0 &&
                         (ClientMessageType)decompressed[0] == ClientMessageType.NewConnection)
@@ -831,15 +835,19 @@ namespace OVS.Rollback.Core
         {
             var config = ServerConfiguration.Instance.DesyncDetection;
 
-            // Count how many non-spectator, non-bot players are expected to report.
+            // Count how many non-spectator, non-bot, connected players are expected to report.
+            // Disconnected players will never send further checksums, so excluding them
+            // prevents LastVerifiedFrame (and LastHandledChecksumFrame) from stalling
+            // indefinitely when a player drops mid-match.
             int expectedPlayers = 0;
             foreach (var kvp in match.Players)
             {
-                if (!kvp.Value.IsSpectator && !match.BotIndices.Contains(kvp.Value.PlayerIndex))
+                if (!kvp.Value.IsSpectator && !kvp.Value.Disconnected &&
+                    !match.BotIndices.Contains(kvp.Value.PlayerIndex))
                     expectedPlayers++;
             }
 
-            if (expectedPlayers < 2) return; // Nothing to compare with a single participant.
+            if (expectedPlayers < 2) return; // Nothing to compare with a single active participant.
 
             foreach (var frameEntry in match.FrameChecksums)
             {
@@ -849,8 +857,8 @@ namespace OVS.Rollback.Core
                 // Only evaluate once all expected players have reported.
                 if (frameMap.Count < expectedPlayers) continue;
 
-                // Skip frames we have already verified.
-                if (frame <= match.LastVerifiedFrame) continue;
+                // Skip frames already fully handled (verified or desynced).
+                if (frame <= match.LastHandledChecksumFrame) continue;
 
                 // ── Majority-vote: find the checksum held by the most players ──
                 // Frequency map: checksum value → count of players reporting it.
@@ -900,6 +908,7 @@ namespace OVS.Rollback.Core
                 {
                     // All players agreed — advance the verified frame watermark.
                     match.TryAdvanceVerifiedFrame(frame);
+                    match.TryAdvanceHandledChecksumFrame(frame);
                     ServerMetrics.ChecksumsProcessed.Add(1);
                 }
                 else
@@ -964,6 +973,10 @@ namespace OVS.Rollback.Core
                             }
                         }
                     }
+
+                    // Frame has been fully evaluated (desynced) — mark it so subsequent
+                    // ProcessChecksums calls skip it rather than re-logging the same desync.
+                    match.TryAdvanceHandledChecksumFrame(frame);
                 }
             }
         }
@@ -1119,10 +1132,12 @@ namespace OVS.Rollback.Core
         /// </summary>
         private void PruneChecksumHistory(MatchState match, uint retentionFrames)
         {
-            uint verified = match.LastVerifiedFrame;
-            if (verified < retentionFrames) return;
+            // Use LastHandledChecksumFrame (>= LastVerifiedFrame) so that desynced frames,
+            // which never advance LastVerifiedFrame, are still eligible for cleanup.
+            uint handled = match.LastHandledChecksumFrame;
+            if (handled < retentionFrames) return;
 
-            uint cutoff = verified - retentionFrames;
+            uint cutoff = handled - retentionFrames;
 
             foreach (var key in match.FrameChecksums.Keys)
             {

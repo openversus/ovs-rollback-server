@@ -117,6 +117,10 @@ namespace OVS.Rollback.Core
                 Message = "{callerName}: Neither OVS_SERVER nor mvsi_server set")]
             public static partial void NoServerConfigured(ILogger logger, [CallerMemberName] string callerName = "");
 
+            [LoggerMessage(EventId = 2004, Level = LogLevel.Warning,
+                Message = "{callerName}: Decompression failed for {Length}-byte packet from {Remote}; treating as uncompressed")]
+            public static partial void DecompressionFailed(ILogger logger, Exception exception, int length, string remote, [CallerMemberName] string callerName = "");
+
             // ── Errors ──
 
             [LoggerMessage(EventId = 3000, Level = LogLevel.Error,
