@@ -437,7 +437,7 @@ namespace OVS.Rollback.Configuration
         public float PingAlpha { get; set; } = 0.15f;
         public float RiftAlpha { get; set; } = 0.08f;
         public float MaxRiftDeviation { get; set; } = 20.0f;
-        public float TargetRift { get; set; } = 0.5f;
+        public float TargetRift { get; set; } = 1.5f;
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
@@ -447,9 +447,9 @@ namespace OVS.Rollback.Configuration
         /// converges. This prevents sluggish correction for high-latency cross-region
         /// players (hi Jenettee, Pumba, Milkman, Dills, and Rainbows) where rift diverges
         /// faster than the update interval can track. Measured in frames.
-        /// Default: 2.1 frames (~25ms at 60fps).
+        /// Default: 1.5 frames (~25ms at 60fps).
         /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 2.1f;
+        public float FastConvergenceThreshold { get; set; } = 1.5f;
     }
 
     public class PingPhaseSettings

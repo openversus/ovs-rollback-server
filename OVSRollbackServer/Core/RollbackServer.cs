@@ -1170,10 +1170,17 @@ namespace OVS.Rollback.Core
             // Raw rift: how far ahead client is RIGHT NOW
             float rawRift = predictedClientFrame - serverFrame;
 
+            // Per-player dynamic target: halfPingFrames already accounts for the
+            // round-trip latency offset, so TargetRift only needs to express the
+            // desired client-side input buffer overhead (in frames). This prevents
+            // high-latency cross-region players from being perpetually throttled by
+            // a target that was calibrated for a low-ping local connection.
+            float dynamicTargetRift = halfPingFrames + config.RiftCalculation.TargetRift;
+
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
-                player.SmoothRift = rawRift - config.RiftCalculation.TargetRift;
+                player.SmoothRift = rawRift - dynamicTargetRift;
                 player.Rift = rawRift;
                 player.HasNewPing = false;
                 player.HasNewFrame = false;
@@ -1183,7 +1190,7 @@ namespace OVS.Rollback.Core
 
             // Calculate error early so we can decide whether to bypass the rate gate.
             // Positive error = client too far ahead, negative = client behind.
-            float riftError = rawRift - config.RiftCalculation.TargetRift;
+            float riftError = rawRift - dynamicTargetRift;
 
             // Apply the update interval gate only when the player is already near the
             // target. When divergence exceeds FastConvergenceThreshold (e.g. 1.5 frames),
