@@ -228,7 +228,8 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", riftCalculationSettings.PingAlpha);
             riftCalculationSettings.RiftAlpha = GetEnvFloat("RiftCalculation__RiftAlpha", riftCalculationSettings.RiftAlpha);
             riftCalculationSettings.MaxRiftDeviation = GetEnvFloat("RiftCalculation__MaxRiftDeviation", riftCalculationSettings.MaxRiftDeviation);
-            riftCalculationSettings.TargetRift = GetEnvFloat("RiftCalculation__TargetRift", riftCalculationSettings.TargetRift);
+            riftCalculationSettings.MinTargetRift = GetEnvFloat("RiftCalculation__MinTargetRift", riftCalculationSettings.MinTargetRift);
+            riftCalculationSettings.MaxTargetRift = GetEnvFloat("RiftCalculation__MaxTargetRift", riftCalculationSettings.MaxTargetRift);
             riftCalculationSettings.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", riftCalculationSettings.RiftUpdateInterval);
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
@@ -319,7 +320,8 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", RiftCalculation.PingAlpha);
             RiftCalculation.RiftAlpha = GetEnvFloat("RiftCalculation__RiftAlpha", RiftCalculation.RiftAlpha);
             RiftCalculation.MaxRiftDeviation = GetEnvFloat("RiftCalculation__MaxRiftDeviation", RiftCalculation.MaxRiftDeviation);
-            RiftCalculation.TargetRift = GetEnvFloat("RiftCalculation__TargetRift", RiftCalculation.TargetRift);
+            RiftCalculation.MinTargetRift = GetEnvFloat("RiftCalculation__MinTargetRift", RiftCalculation.MinTargetRift);
+            RiftCalculation.MaxTargetRift = GetEnvFloat("RiftCalculation__MaxTargetRift", RiftCalculation.MaxTargetRift);
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
@@ -389,7 +391,7 @@ namespace OVS.Rollback.Configuration
     public class ServerSettings
     {
         public ushort Port { get; set; } = 8080;
-        public int MaxPlayers { get; set; } = 6;
+        public int MaxPlayers { get; set; } = 8;
         public string BaseUrl { get; set; } = String.Empty;
         public string HostName { get; set; } = String.Empty;
         public bool FireMatchEvents { get; set; } = true;
@@ -419,7 +421,7 @@ namespace OVS.Rollback.Configuration
     public class GameLogicSettings
     {
         public int DisconnectTimeoutSeconds { get; set; } = 45;
-        public byte MaxInputsPerFrame { get; set; } = 120;
+        public byte MaxInputsPerFrame { get; set; } = 60;
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
         public int MinimumInputFrames { get; set; } = 5;
@@ -434,10 +436,24 @@ namespace OVS.Rollback.Configuration
 
     public class RiftCalculationSettings
     {
-        public float PingAlpha { get; set; } = 0.15f;
+        public float PingAlpha { get; set; } = 0.12f;
         public float RiftAlpha { get; set; } = 0.08f;
         public float MaxRiftDeviation { get; set; } = 20.0f;
-        public float TargetRift { get; set; } = 2.0f;
+        /// <summary>
+        /// Minimum input-buffer overhead (in frames) added on top of halfPingFrames for
+        /// every player, regardless of connection quality. Acts as a floor so that even
+        /// a stable LAN player keeps at least this many frames of ahead-of-server buffer.
+        /// Default: 0.5 frames.
+        /// </summary>
+        public float MinTargetRift { get; set; } = 0.5f;
+        /// <summary>
+        /// Maximum input-buffer overhead (in frames) that an adaptive per-player
+        /// TargetRift can grow to. High-jitter players are given a larger buffer
+        /// proportional to their ping standard deviation so their inputs are less likely
+        /// to arrive late, while low-jitter players stay near <see cref="MinTargetRift"/>.
+        /// Default: 6.0 frames (~100ms at 60fps).
+        /// </summary>
+        public float MaxTargetRift { get; set; } = 6.0f;
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
@@ -449,7 +465,7 @@ namespace OVS.Rollback.Configuration
         /// faster than the update interval can track. Measured in frames.
         /// Default: 2.5 frames (~42ms at 60fps).
         /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 2.5f;
+        public float FastConvergenceThreshold { get; set; } = 4.5f;
     }
 
     public class PingPhaseSettings
@@ -461,7 +477,7 @@ namespace OVS.Rollback.Configuration
     public class InputValidationSettings
     {
         public bool EnableRateLimiting { get; set; } = true;
-        public int MaxInputsPerSecond { get; set; } = 120;
+        public int MaxInputsPerSecond { get; set; } = 60;
         public uint InputLookaheadFrames { get; set; } = 100;
         public uint InputLookbackFrames { get; set; } = 200;
     }

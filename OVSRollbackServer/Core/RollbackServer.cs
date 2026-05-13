@@ -1171,11 +1171,34 @@ namespace OVS.Rollback.Core
             float rawRift = predictedClientFrame - serverFrame;
 
             // Per-player dynamic target: halfPingFrames already accounts for the
-            // round-trip latency offset, so TargetRift only needs to express the
-            // desired client-side input buffer overhead (in frames). This prevents
-            // high-latency cross-region players from being perpetually throttled by
-            // a target that was calibrated for a low-ping local connection.
-            float dynamicTargetRift = halfPingFrames + config.RiftCalculation.TargetRift;
+            // round-trip latency offset. The adaptive buffer overhead is derived from
+            // this player's ping jitter (standard deviation in ms, converted to frames).
+            // A stable LAN connection stays near MinTargetRift; a high-jitter cross-region
+            // connection scales up toward MaxTargetRift proportionally to its jitter,
+            // giving it a larger input buffer so inputs are less likely to arrive late.
+            // Before enough Welford samples have been collected, we fall back to
+            // MinTargetRift so new connections don't get an unearned large buffer.
+            float adaptiveTargetRift;
+            {
+                var rc = config.RiftCalculation;
+                if (player.PingVarianceSampleCount >= PlayerInfo.VarianceMinSamples)
+                {
+                    // pingStdDev in ms → convert to frames, then lerp between min and max.
+                    float pingStdDevFrames = (float)Math.Sqrt(player.PingVariance) / TargetFrameTime;
+                    // A jitter of 0 frames → MinTargetRift; JitterScaleFrames or more → MaxTargetRift.
+                    // JitterScaleFrames = one full frame (~16.7ms at 60fps) is a reasonable
+                    // normalisation point: at 1 frame of ping stddev the player gets max buffer.
+                    const float JitterScaleFrames = 1.0f;
+                    float t = Math.Clamp(pingStdDevFrames / JitterScaleFrames, 0f, 1f);
+                    adaptiveTargetRift = rc.MinTargetRift + t * (rc.MaxTargetRift - rc.MinTargetRift);
+                }
+                else
+                {
+                    adaptiveTargetRift = rc.MinTargetRift;
+                }
+            }
+
+            float dynamicTargetRift = halfPingFrames + adaptiveTargetRift;
 
             if (!player.RiftInit)
             {
