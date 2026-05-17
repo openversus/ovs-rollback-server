@@ -232,7 +232,6 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", riftCalculationSettings.RiftUpdateInterval);
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
-            riftCalculationSettings.FastConvergenceThreshold = GetEnvFloat("RiftCalculation__FastConvergenceThreshold", riftCalculationSettings.FastConvergenceThreshold);
 
             // Ping phase settings
             pingPhaseSettings.TotalPings = GetEnvUInt("PingPhase__TotalPings", pingPhaseSettings.TotalPings);
@@ -320,7 +319,6 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
-            RiftCalculation.FastConvergenceThreshold = GetEnvFloat("RiftCalculation__FastConvergenceThreshold", RiftCalculation.FastConvergenceThreshold);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -430,15 +428,6 @@ namespace OVS.Rollback.Configuration
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
-        /// <summary>
-        /// When |riftError| exceeds this threshold (in frames), the RiftUpdateInterval
-        /// gate is bypassed so corrections are applied every tick until the player
-        /// converges. This prevents sluggish correction for high-latency cross-region
-        /// players (hi Jenettee, Pumba, Milkman, Dills, and Rainbows) where rift diverges
-        /// faster than the update interval can track. Measured in frames.
-        /// Default: 1.5 frames (~25ms at 60fps).
-        /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 1.5f;
     }
 
     public class PingPhaseSettings

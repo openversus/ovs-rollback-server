@@ -174,6 +174,7 @@ namespace OVS.Rollback.Core
                 {
 
                     var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anyEp);
+                    var data = buffer[..result.ReceivedBytes].ToArray();
                     var remote = (IPEndPoint)result.RemoteEndPoint;
 
                     if (!connections.Contains(remote.Address.ToString()))
@@ -184,9 +185,8 @@ namespace OVS.Rollback.Core
 
                     ServerMetrics.PacketsReceived.Add(1);
 
-                    // Pass a span directly — HandleMessage is synchronous and completes
-                    // before the next ReceiveFromAsync call, so the buffer is stable.
-                    HandleMessage(buffer.AsSpan(0, result.ReceivedBytes), remote);
+                    // NEW: Handle synchronously - we're already on ThreadPool, no need for Task
+                    HandleMessage(data, result.ReceivedBytes, remote);
                 }
                 catch (OperationCanceledException) { break; }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { break; }
@@ -202,14 +202,17 @@ namespace OVS.Rollback.Core
         //  Message Dispatch
         // ═══════════════════════════════════════════
 
-        private void HandleMessage(ReadOnlySpan<byte> data, IPEndPoint remote)
+        private void HandleMessage(byte[] buffer, int length, IPEndPoint remote)
         {
+            var config = ServerConfiguration.Instance;
+
+
             try
             {
                 // ── Hex dump of first 16 raw bytes for diagnosis ──
-                // string rawHex = Convert.ToHexString(data[..Math.Min(data.Length, 16)]);
+                // string rawHex = Convert.ToHexString(buffer, 0, Math.Min(length, 16));
                 //        _logger.LogDebug("Received {Len} bytes from {Remote} raw:[{Hex}]",
-                //            data.Length, remote, rawHex);
+                //            length, remote, rawHex);
 
                 // ── Decompress with C++ catch-all pattern ──
                 //
@@ -221,16 +224,17 @@ namespace OVS.Rollback.Core
                 byte[] decompressed;
                 try
                 {
-                    decompressed = CompressionHelper.Decompress(data);
+                    // Pass as ReadOnlySpan<byte> — avoids allocating a new byte[] slice
+                    //    decompressed = CompressionHelper.Decompress(new ReadOnlySpan<byte>(buffer, 0, length));
+                    decompressed = CompressionHelper.Decompress(buffer[..length]);
                 }
                 catch (Exception dex)
                 {
                     // Matches C++: catch(...) { decompressedData = receivedData; }
-                    // Error path only — ToArray() here is acceptable.
                     _logger.LogWarning(dex,
                         "Decompress failed for {Len} bytes from {Remote}, using raw data",
-                        data.Length, remote);
-                    decompressed = data.ToArray();
+                        length, remote);
+                    decompressed = buffer[..length];
                 }
 
                 // ── Hex dump of first 16 decompressed bytes ──
@@ -767,10 +771,19 @@ namespace OVS.Rollback.Core
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame, ServerConfiguration config)
+        private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame)
         {
+            var config = ServerConfiguration.Instance;
+
+
+            if (serverFrame % config.RiftCalculation.RiftUpdateInterval != 0 && serverFrame > config.RiftCalculation.RiftUpdateThreshold)
+            {
+
+                return;
+            }
             if (!player.HasNewPing || !player.HasNewFrame)
             {
+
                 return;
             }
 
@@ -783,6 +796,7 @@ namespace OVS.Rollback.Core
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
+                // NEW: Initialize with bias toward target rift
                 player.SmoothRift = rawRift - config.RiftCalculation.TargetRift;
                 player.Rift = rawRift;
                 player.HasNewPing = false;
@@ -791,24 +805,36 @@ namespace OVS.Rollback.Core
                 return;
             }
 
-            // Calculate error early so we can decide whether to bypass the rate gate.
-            // Positive error = client too far ahead, negative = client behind.
-            float riftError = rawRift - config.RiftCalculation.TargetRift;
-
-            // Apply the update interval gate only when the player is already near the
-            // target. When divergence exceeds FastConvergenceThreshold (e.g. 1.5 frames),
-            // correct every tick regardless of the interval — high-latency cross-region
-            // players can drift faster than a coarse update interval can track.
-            bool largeDeviation = MathF.Abs(riftError) >= config.RiftCalculation.FastConvergenceThreshold;
-            bool gated = serverFrame % config.RiftCalculation.RiftUpdateInterval != 0
-                         && serverFrame > config.RiftCalculation.RiftUpdateThreshold;
-
-            if (gated && !largeDeviation)
-            {
-                return;
-            }
-
             player.Rift = rawRift;
+
+            //bool noGCActive = false;
+            //try
+            //{
+            //    // Try to enter NoGCRegion for this single tick
+            //    noGCActive = GC.TryStartNoGCRegion(
+            //        config.Performance.GarbageCollectionFreeRAMThreshold,
+            //        disallowFullBlockingGC: true);
+            //}
+            //catch (InvalidOperationException)
+            //{
+            //    // Already in NoGCRegion from previous iteration - this is fine
+            //    noGCActive = false;
+            //}
+            //catch (ArgumentOutOfRangeException)
+            //{
+            //    // User provided invalid threshold, but don't de because of it - log once and continue without NoGCRegion
+            //    _logger.LogWarning(
+            //        "Invalid NoGCRegion threshold configured: {Threshold} bytes. " +
+            //        "NoGCRegion will be disabled. Please appsettings.json and ensure " +
+            //        "the threshold is less than the total available memory on the server, and " +
+            //        "that the value provided is a positive integer measured in Megabytes (e.g. 512 for ~512MB).",
+            //        config.Performance.GarbageCollectionFreeRAMThreshold);
+            //    noGCActive = false;
+            //}
+
+            // NEW: Calculate error from TARGET rift (not zero)
+            // Positive error = client too far ahead, negative = client behind
+            float riftError = rawRift - config.RiftCalculation.TargetRift;
 
             if (config.RiftCalculation.UseAggressiveCorrection)
             {
@@ -870,6 +896,18 @@ namespace OVS.Rollback.Core
                     player.MatchId, player.PlayerIndex, player.Ping, player.SmoothRift,
                     player.Rift, predictedClientFrame, serverFrame);
             }
+
+            //if (noGCActive && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
+            //{
+            //    try
+            //    {
+            //        GC.EndNoGCRegion();
+            //    }
+            //    catch
+            //    {
+            //    }
+            //}
+
         }
 
         // ═══════════════════════════════════════════
@@ -930,7 +968,7 @@ namespace OVS.Rollback.Core
                 // ── Tick (fully synchronous — zero async overhead) ──
 
                 long tickStart = Stopwatch.GetTimestamp();
-                Tick(match, config);
+                Tick(match);
 
                 // Sample histogram based on config
                 if (match.CurrentFrame % config.Performance.MetricsSamplingInterval == 0)
@@ -1071,10 +1109,10 @@ namespace OVS.Rollback.Core
         // ═══════════════════════════════════════════
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private void Tick(MatchState match, ServerConfiguration config)
+        private void Tick(MatchState match)
         {
             var ws = match.Workspace!;
-            var gameConfig = config.GameLogic;
+            var gameConfig = ServerConfiguration.Instance.GameLogic;
 
             // FIX #4: Add lock when snapshotting players (prevents race conditions)
             lock (match.Lock)
@@ -1093,7 +1131,7 @@ namespace OVS.Rollback.Core
                 }
                 lock (player.Lock)
                 {
-                    CalcRiftVariableTick(player, serverFrame, config);
+                    CalcRiftVariableTick(player, serverFrame);
 
                     if (!player.Disconnected &&
                         Stopwatch.GetElapsedTime(player.LastInputTimestamp).TotalSeconds
@@ -1216,12 +1254,9 @@ namespace OVS.Rollback.Core
                         while (f < lastClientFrame && predictedCount < MaxInputsPerFrame)
                         {
                             uint framesMissed = f - lastAck;
-                            // Do NOT write into inputMap — a real input for this frame may
-                            // still arrive and TryAdd would silently lose it if we pre-fill here.
-                            // Predictions are scratch-only: they live in the outbound payload
-                            // for this tick and are discarded when the next tick begins.
-                            ws.Payload.InputPerFrame[idx].Add(
-                                InputPredictor.Predict(lastKnownInput, framesMissed));
+                            uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed);
+                            inputMap[f] = predicted;
+                            ws.Payload.InputPerFrame[idx].Add(predicted);
                             predictedCount++;
                             f++;
                         }
@@ -1274,6 +1309,8 @@ namespace OVS.Rollback.Core
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void SendPlayerInput(MatchState match, PlayerInfo player, TickWorkspace ws, uint sequence)
         {
+            var config = ServerConfiguration.Instance;
+
             if (player.Disconnected) return;
 
             var header = new ServerHeader {
