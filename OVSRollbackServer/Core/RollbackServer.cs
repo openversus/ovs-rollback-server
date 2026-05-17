@@ -385,12 +385,15 @@ namespace OVS.Rollback.Core
                         MatchId = matchData.MatchId,
                         Key = matchData.Key,
                         DurationInFrames = config.MatchDuration,
-                        TickIntervalMs = 1000f / 60f,
+                        //TickIntervalMs = 1000f / 60f,
+                        TickIntervalMs = TargetFrameTime,
                         CurrentFrame = 0,
                         MaxPlayers = config.MaxPlayers,
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
-                        SequenceCounter = uint.MaxValue,
+                        //SequenceCounter = uint.MaxValue,
+                        SequenceCounter = 0,
+
                         // Size Inputs by team-side slot count (MaxPlayers - NumSpectators).
                         // Why not MaxPlayers: when spectators are included in MaxPlayers,
                         // sizing Inputs by MaxPlayers leaves empty trailing slots that the
