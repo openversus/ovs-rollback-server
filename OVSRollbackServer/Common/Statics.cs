@@ -21,6 +21,7 @@ namespace OVS.Rollback.Common
     /// as a static utility and cannot be instantiated.</remarks>
     public static class Statics
     {
+        private static readonly string _version = "2026.05.18.014605";
         private static LoggingColorRoot _loggingColorRoot = new LoggingColorRoot();
         private static string _dateFormat = "yyyy-MM-dd";
         private static string _timeFormat = "HH:mm:ss.fff";
@@ -33,6 +34,8 @@ namespace OVS.Rollback.Common
         public static DIContainer? _diContainer;
 
         internal static bool ShouldMoveLogfile { get => FinalLogFile.NotNullOrWhiteSpace; }
+
+        public static string Version { get => _version; }
 
         /// <summary>
         /// Gets the application's dependency injection container instance.

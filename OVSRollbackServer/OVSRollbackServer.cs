@@ -34,6 +34,7 @@ namespace OVS.Rollback
 
         public static async Task<int> Main(string[] args)
         {
+            logger.LogInformation("{LogPrefix} OVS Rollback Server version: {version}", LogPrefix, Statics.Version);
             RunTimer.Start();
 
             // ═══════════════════════════════════════════
