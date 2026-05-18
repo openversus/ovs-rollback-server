@@ -1188,8 +1188,8 @@ namespace OVS.Rollback.Core
                     // A jitter of 0 frames → MinTargetRift; JitterScaleFrames or more → MaxTargetRift.
                     // JitterScaleFrames = one full frame (~16.7ms at 60fps) is a reasonable
                     // normalisation point: at 1 frame of ping stddev the player gets max buffer.
-                    const float JitterScaleFrames = 1.0f;
-                    float t = Math.Clamp(pingStdDevFrames / JitterScaleFrames, 0f, 1f);
+
+                    float t = Math.Clamp(pingStdDevFrames / config.RiftCalculation.JitterScaleFrames, 0f, config.RiftCalculation.JitterScaleFrames);
                     adaptiveTargetRift = rc.MinTargetRift + t * (rc.MaxTargetRift - rc.MinTargetRift);
                 }
                 else
@@ -1198,7 +1198,8 @@ namespace OVS.Rollback.Core
                 }
             }
 
-            float dynamicTargetRift = halfPingFrames + adaptiveTargetRift;
+            //float dynamicTargetRift = halfPingFrames + adaptiveTargetRift;
+            float dynamicTargetRift = (halfPingFrames * 2f) + adaptiveTargetRift;
 
             if (!player.RiftInit)
             {

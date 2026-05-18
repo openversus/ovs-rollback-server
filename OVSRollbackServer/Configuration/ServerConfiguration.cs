@@ -230,6 +230,7 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.MaxRiftDeviation = GetEnvFloat("RiftCalculation__MaxRiftDeviation", riftCalculationSettings.MaxRiftDeviation);
             riftCalculationSettings.MinTargetRift = GetEnvFloat("RiftCalculation__MinTargetRift", riftCalculationSettings.MinTargetRift);
             riftCalculationSettings.MaxTargetRift = GetEnvFloat("RiftCalculation__MaxTargetRift", riftCalculationSettings.MaxTargetRift);
+            riftCalculationSettings.JitterScaleFrames = GetEnvFloat("RiftCalculation__JitterScaleFrames", riftCalculationSettings.JitterScaleFrames);
             riftCalculationSettings.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", riftCalculationSettings.RiftUpdateInterval);
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
@@ -322,6 +323,7 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.MaxRiftDeviation = GetEnvFloat("RiftCalculation__MaxRiftDeviation", RiftCalculation.MaxRiftDeviation);
             RiftCalculation.MinTargetRift = GetEnvFloat("RiftCalculation__MinTargetRift", RiftCalculation.MinTargetRift);
             RiftCalculation.MaxTargetRift = GetEnvFloat("RiftCalculation__MaxTargetRift", RiftCalculation.MaxTargetRift);
+            RiftCalculation.JitterScaleFrames = GetEnvFloat("RiftCalculation__JitterScaleFrames", RiftCalculation.JitterScaleFrames);
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
@@ -453,7 +455,8 @@ namespace OVS.Rollback.Configuration
         /// to arrive late, while low-jitter players stay near <see cref="MinTargetRift"/>.
         /// Default: 6.0 frames (~100ms at 60fps).
         /// </summary>
-        public float MaxTargetRift { get; set; } = 6.0f;
+        public float MaxTargetRift { get; set; } = 3.0f;
+        public float JitterScaleFrames { get; set; } = 3.0f;
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
@@ -465,7 +468,7 @@ namespace OVS.Rollback.Configuration
         /// faster than the update interval can track. Measured in frames.
         /// Default: 2.5 frames (~42ms at 60fps).
         /// </summary>
-        public float FastConvergenceThreshold { get; set; } = 4.5f;
+        public float FastConvergenceThreshold { get; set; } = 2.5f;
     }
 
     public class PingPhaseSettings
