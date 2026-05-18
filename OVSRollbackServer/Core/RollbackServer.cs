@@ -676,6 +676,11 @@ namespace OVS.Rollback.Core
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
             }
+
+            if (!match.IsTickRunning)
+            {
+                StartTickLoop(match);
+            }
         }
 
         // ═══════════════════════════════════════════
@@ -757,10 +762,11 @@ namespace OVS.Rollback.Core
                         )
                     );
 
-                if (!match.IsTickRunning)
-                {
-                    StartTickLoop(match);
-                }
+                // Moved to BroadcastPlayersConfiguration
+                //if (!match.IsTickRunning)
+                //{
+                //    StartTickLoop(match);
+                //}
 
                 _ = Events.SendMatchStartEvent(this, StatusEventArgs.CreateNew(
                         description: "MatchStarted",

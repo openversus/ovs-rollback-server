@@ -92,7 +92,7 @@ namespace OVS.Rollback.Models
         }
 
         // ── Sequence & ping tracking ──
-        public uint SequenceCounter { get; set; } = uint.MaxValue;
+        public uint SequenceCounter { get; set; } = 0;
         public uint PingPhaseCount { get; set; }
         public uint PingPhaseTotal { get; set; }
 
