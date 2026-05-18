@@ -1219,7 +1219,8 @@ namespace OVS.Rollback.Core
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
-                player.SmoothRift = rawRift - dynamicTargetRift;
+                //player.SmoothRift = rawRift - dynamicTargetRift;
+                player.SmoothRift = 0f;
                 player.Rift = rawRift;
                 player.HasNewPing = false;
                 player.HasNewFrame = false;
