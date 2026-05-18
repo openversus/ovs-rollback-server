@@ -640,6 +640,7 @@ namespace OVS.Rollback.Core
             {
                 return;
             }
+            match.ClientStartTimestamp = Stopwatch.GetTimestamp();
 
             //ReadOnlySpan<ushort> mapping = [0, 256, 513, 769];
             ReadOnlySpan<ushort> mapping = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
@@ -654,7 +655,6 @@ namespace OVS.Rollback.Core
 
             //foreach (var _ in match.Players) count++;
 
-            match.ClientStartTimestamp = Stopwatch.GetTimestamp();
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
@@ -675,11 +675,6 @@ namespace OVS.Rollback.Core
                     ConfigValues = configValues
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
-            }
-
-            if (!match.IsTickRunning)
-            {
-                StartTickLoop(match);
             }
         }
 
@@ -762,11 +757,10 @@ namespace OVS.Rollback.Core
                         )
                     );
 
-                // Moved to BroadcastPlayersConfiguration
-                //if (!match.IsTickRunning)
-                //{
-                //    StartTickLoop(match);
-                //}
+                if (!match.IsTickRunning)
+                {
+                    StartTickLoop(match);
+                }
 
                 _ = Events.SendMatchStartEvent(this, StatusEventArgs.CreateNew(
                         description: "MatchStarted",
