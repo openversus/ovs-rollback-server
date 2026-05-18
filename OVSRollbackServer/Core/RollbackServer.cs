@@ -1190,7 +1190,7 @@ namespace OVS.Rollback.Core
                     // JitterScaleFrames = one full frame (~16.7ms at 60fps) is a reasonable
                     // normalisation point: at 1 frame of ping stddev the player gets max buffer.
 
-                    float t = Math.Clamp(pingStdDevFrames / config.RiftCalculation.JitterScaleFrames, 0f, config.RiftCalculation.JitterScaleFrames);
+                    float t = Math.Clamp(pingStdDevFrames / config.RiftCalculation.JitterScaleFrames, 0f, 1f);
                     adaptiveTargetRift = rc.MinTargetRift + t * (rc.MaxTargetRift - rc.MinTargetRift);
                 }
                 else
