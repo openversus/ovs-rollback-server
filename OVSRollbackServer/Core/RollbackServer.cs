@@ -395,7 +395,8 @@ namespace OVS.Rollback.Core
                         MaxPlayers = config.MaxPlayers,
                         PingPhaseCount = 0,
                         PingPhaseTotal = 20,
-                        SequenceCounter = uint.MaxValue,
+                        //SequenceCounter = uint.MaxValue,
+                        SequenceCounter = 0,
                         Config = config,
                         // Size Inputs by team-side slot count (MaxPlayers - NumSpectators).
                         // Why not MaxPlayers: when spectators are included in MaxPlayers,
