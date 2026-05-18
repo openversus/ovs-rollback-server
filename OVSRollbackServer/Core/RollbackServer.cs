@@ -790,6 +790,11 @@ namespace OVS.Rollback.Core
 
             lock (player.Lock)
             {
+                if (player.FirstInputServerFrame == uint.MaxValue)
+                {
+                    player.FirstInputServerFrame = match.CurrentFrame;
+                }
+
                 player.LastClientFrame = payload.ClientFrame;
                 player.HasNewFrame = true;
                 player.LastInputTimestamp = Stopwatch.GetTimestamp();
@@ -1167,6 +1172,14 @@ namespace OVS.Rollback.Core
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame, ServerConfiguration config)
         {
+            if (!player.HasCompletedWarmup(serverFrame))
+            {
+                // Still in warmup — update smoothed ping but don't send rift correction
+                player.HasNewPing = false;
+                player.HasNewFrame = false;
+                return;
+            }
+
             if (!player.HasNewPing || !player.HasNewFrame)
             {
                 return;

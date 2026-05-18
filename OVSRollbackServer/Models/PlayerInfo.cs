@@ -22,6 +22,10 @@ namespace OVS.Rollback.Models
         // ── Sequence tracking ──
         public uint LastSeqRecv { get; set; }
         public uint LastSeqSent { get; set; }
+        public uint FirstInputServerFrame { get; set; } = uint.MaxValue;
+        public bool HasCompletedWarmup(uint currentServerFrame, uint warmupFrames = 60)
+            => FirstInputServerFrame != uint.MaxValue
+               && (currentServerFrame - FirstInputServerFrame) >= warmupFrames;
 
         // ── Frame acknowledgement ──
         public List<uint> AckedFrames { get; set; } = [];
