@@ -122,6 +122,7 @@ namespace OVS.Rollback.Models
         // ── Tick loop control ──
         private int _tickRunning;
         public bool IsTickRunning => Volatile.Read(ref _tickRunning) == 1;
+        public long ClientStartTimestamp { get; set; } = 0;
         public bool TryStartTick() => Interlocked.CompareExchange(ref _tickRunning, 1, 0) == 0;
         public void StopTick() => Volatile.Write(ref _tickRunning, 0);
 

@@ -654,6 +654,7 @@ namespace OVS.Rollback.Core
 
             //foreach (var _ in match.Players) count++;
 
+            match.ClientStartTimestamp = Stopwatch.GetTimestamp();
             foreach (var kvp in match.Players)
             {
                 var player = kvp.Value;
@@ -1339,7 +1340,10 @@ namespace OVS.Rollback.Core
 
             long targetIntervalTicks =
                 (long)(match.TickIntervalMs / 1000.0 * Stopwatch.Frequency);
-            long startTime = Stopwatch.GetTimestamp();
+            //long startTime = Stopwatch.GetTimestamp();
+            long startTime = match.ClientStartTimestamp > 0
+                ? match.ClientStartTimestamp
+                : Stopwatch.GetTimestamp();
             long nextTickTime = startTime + targetIntervalTicks;
             long accumulatedError = 0;
 
