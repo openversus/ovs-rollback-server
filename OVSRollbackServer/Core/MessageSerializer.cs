@@ -13,7 +13,7 @@ namespace OVS
     public static class MessageSerializer
     {
         private const int HeaderSize = 5; // 1 type + 4 sequence
-        private static readonly ushort[] PlayerConfigValues = [0, 256, 513, 769];
+        private static readonly ushort[] PlayerConfigValues = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
 
         public static ClientMessageComplete? ParseClientMessage(ReadOnlySpan<byte> buffer)
         {

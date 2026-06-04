@@ -503,14 +503,15 @@ namespace OVS.Rollback.Core
             var newPlayer = new PlayerInfo {
                 EndPoint = remote,
                 MatchId = matchData.MatchId,
-                PlayerIndex = payloadIndex,
+                //PlayerIndex = payloadIndex,
+                PlayerIndex = payloadIndex >= 8888 ? match.SpecIndex : payloadIndex,
                 PlayerId = playerID,
                 PlayerName = playerName,
                 PlayerCharacter = playerCharacter,
                 // Spectators get a unique sentinel PlayerIndex starting at 8888
                 // (8888, 8889, 8890, ...) so multiple specs in one match don't
                 // collide on the OvsPlayer lookup.
-                IsSpectator = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
+                IsSpectator = payloadIndex >= 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
                 AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
@@ -544,6 +545,7 @@ namespace OVS.Rollback.Core
                 MatchDurationInFrames = match.DurationInFrames,
                 IsValidationServerDebugMode = 0
             };
+
             SendServerMessage(match, newPlayer, ServerMessageType.NewConnectionReply, reply);
 
             // Bots occupy slots in MaxPlayers but never UDP-connect, so they
@@ -748,17 +750,17 @@ namespace OVS.Rollback.Core
 
         private void HandleClientInput(MatchState match, PlayerInfo player, InputPayload payload)
         {
-            if (player.IsSpectator)
-            {
-                return; // Spectators don't send inputssf
-            }
-
             lock (player.Lock)
             {
                 player.LastClientFrame = payload.ClientFrame;
                 player.HasNewFrame = true;
                 player.LastInputTimestamp = Stopwatch.GetTimestamp();
                 player.Disconnected = false;
+            }
+
+            if (player.IsSpectator)
+            {
+                return; // Spectators don't send inputssf
             }
 
             var histMap = match.Inputs[player.PlayerIndex];
@@ -1276,26 +1278,28 @@ namespace OVS.Rollback.Core
                 SendPlayerInput(match, recipient, ws, playerSequence);
             }
 
+            // Test not cleaning input history
+
             // ── Input cleanup every N frames (no LINQ, no sort) ──
-            if (match.CurrentFrame % gameConfig.InputCleanupInterval == 0)
-            {
-                uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames
-                    ? match.CurrentFrame - gameConfig.InputHistoryFrames
-                    : 0;
+            //if (match.CurrentFrame % gameConfig.InputCleanupInterval == 0)
+            //{
+            //    uint minKeep = match.CurrentFrame > gameConfig.InputHistoryFrames
+            //        ? match.CurrentFrame - gameConfig.InputHistoryFrames
+            //        : 0;
 
-                for (int i = 0; i < match.Inputs.Count; i++)
-                {
-                    var histMap = match.Inputs[i];
-                    if (histMap.Count <= gameConfig.InputHistoryFrames) continue;
+            //    for (int i = 0; i < match.Inputs.Count; i++)
+            //    {
+            //        var histMap = match.Inputs[i];
+            //        if (histMap.Count <= gameConfig.InputHistoryFrames) continue;
 
-                    // ConcurrentDictionary enumeration is lock-free, no array allocated
-                    foreach (var kvp in histMap)
-                    {
-                        if (kvp.Key < minKeep)
-                            histMap.TryRemove(kvp.Key, out _);
-                    }
-                }
-            }
+            //        // ConcurrentDictionary enumeration is lock-free, no array allocated
+            //        foreach (var kvp in histMap)
+            //        {
+            //            if (kvp.Key < minKeep)
+            //                histMap.TryRemove(kvp.Key, out _);
+            //        }
+            //    }
+            //}
         }
 
         // ═══════════════════════════════════════════

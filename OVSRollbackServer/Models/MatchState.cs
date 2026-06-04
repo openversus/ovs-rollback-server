@@ -8,6 +8,7 @@ namespace OVS.Rollback.Models
 {
     public class MatchState
     {
+        private ushort _specIndex = 0;
         public readonly object Lock = new();
 
         // ── Match identification ──
@@ -22,6 +23,24 @@ namespace OVS.Rollback.Models
         public float TickIntervalMs { get; set; }
         public uint CurrentFrame { get; set; }
         public int MaxPlayers { get; set; }
+        public ushort SpecIndex
+        {
+            get {
+                lock (Lock)
+                {
+                    if (_specIndex == 0)
+                    {
+                        _specIndex = 8888;
+                    }
+                    else
+                    {
+                        ++_specIndex;
+                    }
+                    
+                    return _specIndex;
+                }
+            }
+        }
         public int NumSpectators
         {
             get {
