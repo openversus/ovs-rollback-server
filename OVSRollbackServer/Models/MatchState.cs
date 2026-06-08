@@ -22,6 +22,13 @@ namespace OVS.Rollback.Models
         public float TickIntervalMs { get; set; }
         public uint CurrentFrame { get; set; }
         public int MaxPlayers { get; set; }
+
+        // Wire-protocol slot count: number of team-side player slots that appear
+        // in PlayerInput packets. Equals MaxPlayers minus spectator slots. Set
+        // once at match creation from the static match config, NOT derived from
+        // the live Players dict — spectators joining mid-handshake must not
+        // change the wire format.
+        public int TeamSlotCount { get; set; }
         public int NumSpectators
         {
             get {

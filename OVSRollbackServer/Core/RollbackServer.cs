@@ -284,11 +284,22 @@ namespace OVS.Rollback.Core
                     return;
                 }
 
-                if (header.Sequence <= player.LastSeqRecv)
+                // Input packets carry frame-keyed data and must never be dropped
+                // by the sequence gate. UDP reordering during a lag spike can
+                // cause a higher-sequence packet (e.g. an ack) to arrive before
+                // an Input from the burst, which would otherwise permanently
+                // discard the dropped Input's frames and cause desync. Dedup
+                // for Input is handled by TryAdd on the per-frame dictionary in
+                // HandleClientInput. All other message types are idempotent or
+                // time-sensitive, so out-of-order delivery is still discarded.
+                if (type != ClientMessageType.Input)
                 {
-                    return;
+                    if (header.Sequence <= player.LastSeqRecv)
+                    {
+                        return;
+                    }
+                    player.LastSeqRecv = header.Sequence;
                 }
-                player.LastSeqRecv = header.Sequence;
 
                 if (type == ClientMessageType.QualityData)
                 {
@@ -402,7 +413,13 @@ namespace OVS.Rollback.Core
                         // real participant (human or bot); spectators have PlayerIndex 8888
                         // and are filtered separately.
                         Inputs = new(config.MaxPlayers - config.NumSpectators),
-                        Workspace = new TickWorkspace(config.MaxPlayers),
+                        // Wire-protocol slot count excludes spectators: they
+                        // are recipients but never occupy a team-side slot.
+                        // Workspace.MaxPlayers sizes PlayerSnapshot (recipients,
+                        // incl. spectators); WireSlotCount sizes the payload
+                        // arrays that get serialized to the client.
+                        TeamSlotCount = config.MaxPlayers - config.NumSpectators,
+                        Workspace = new TickWorkspace(config.MaxPlayers, config.MaxPlayers - config.NumSpectators),
                         NumBots = config.NumBots,
                         BotIndices = new HashSet<int>(
                             config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
@@ -513,7 +530,9 @@ namespace OVS.Rollback.Core
                 IsSpectator = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
-                AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
+                // Sized to wire-protocol slot count, not MaxPlayers — spectator
+                // slots are not in the PlayerInputAck wire format either.
+                AckedFrames = new List<uint>(new uint[match.TeamSlotCount]),
                 Ping = 0,
                 Ready = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastClientFrame = 0,
@@ -1195,7 +1214,7 @@ namespace OVS.Rollback.Core
                 float smoothRift;
                 lock (recipient.Lock)
                 {
-                    for (int i = 0; i < match.MaxPlayers && i < recipient.AckedFrames.Count; i++)
+                    for (int i = 0; i < match.TeamSlotCount && i < recipient.AckedFrames.Count; i++)
                         ws.AckedFrames[i] = recipient.AckedFrames[i];
                     lastClientFrame = recipient.LastClientFrame;
                     ping = recipient.Ping;
@@ -1255,8 +1274,29 @@ namespace OVS.Rollback.Core
                         {
                             uint framesMissed = f - lastAck;
                             uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed);
-                            inputMap[f] = predicted;
-                            ws.Payload.InputPerFrame[idx].Add(predicted);
+
+                            // TryAdd, NOT inputMap[f] = predicted. The shared input
+                            // map is per-PlayerIndex across all recipients; if real
+                            // input or an earlier prediction already lives at frame f,
+                            // a blind overwrite would replace real data with a stale
+                            // neutral guess — and HandleClientInput uses TryAdd, so
+                            // late-arriving real inputs would silently fail to fix it.
+                            // Result: every other recipient reads the wrong value for
+                            // that frame, manifesting as teleporting/rollback. Reading
+                            // back what's in the map preserves the cbb8f7f desync fix
+                            // (all recipients see the same value for a given frame)
+                            // without trampling real inputs.
+                            uint emitted;
+                            if (inputMap.TryAdd(f, predicted))
+                            {
+                                emitted = predicted;
+                            }
+                            else
+                            {
+                                inputMap.TryGetValue(f, out emitted);
+                            }
+
+                            ws.Payload.InputPerFrame[idx].Add(emitted);
                             predictedCount++;
                             f++;
                         }
@@ -1319,8 +1359,11 @@ namespace OVS.Rollback.Core
             };
 
             // ── Serialize directly into workspace buffer (SpanWriter, zero-alloc) ──
+            // Use TeamSlotCount (not MaxPlayers): spectators are recipients but
+            // do not occupy a wire slot. Inflating the slot count breaks clients
+            // that expect the team-side count fixed by the original protocol.
             int serializedLen = MessageSerializer.SerializePlayerInputTo(
-                header, ws.Payload, match.MaxPlayers, ws.SerializeBuffer);
+                header, ws.Payload, match.TeamSlotCount, ws.SerializeBuffer);
 
             // ── Compress into workspace buffer (output byte[] is pre-allocated) ──
             int compressedLen = CompressionHelper.CompressTo(
