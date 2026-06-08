@@ -769,7 +769,7 @@ namespace OVS.Rollback.Core
         {
             if (player.IsSpectator)
             {
-                return; // Spectators don't send inputssf
+                return; // Spectators don't send inputs
             }
 
             lock (player.Lock)
@@ -780,7 +780,22 @@ namespace OVS.Rollback.Core
                 player.Disconnected = false;
             }
 
-            var histMap = match.Inputs[player.PlayerIndex];
+            int playerIdx = player.PlayerIndex;
+            if (playerIdx < 0 || playerIdx >= match.Inputs.Count)
+            {
+                // PlayerIndex sits outside the team-side slot range. The
+                // match-creation comment assumes PlayerIndex is contiguous
+                // 0..(TeamSlotCount-1) for non-spec players, but a matchmaker
+                // can violate that (sparse indices, off-by-one MaxPlayers,
+                // misclassified spec/bot). Drop the input rather than crash
+                // and bring down the whole match.
+                _logger.LogWarning(
+                    "Input from PlayerIndex {Idx} but match.Inputs has {Size} slots " +
+                    "(MatchId {MatchId}, IsSpectator {Spec}); dropping input.",
+                    playerIdx, match.Inputs.Count, match.MatchId, player.IsSpectator);
+                return;
+            }
+            var histMap = match.Inputs[playerIdx];
             for (byte i = 0; i < payload.NumFrames && i < payload.InputPerFrame.Count; i++)
             {
                 uint f = payload.StartFrame + i;
@@ -1231,6 +1246,12 @@ namespace OVS.Rollback.Core
                         continue; // Spectators don't send inputs
                     }
                     int idx = peer.PlayerIndex;
+                    // Defensive: same matchmaker sparsity concern as in
+                    // HandleClientInput. Skip rather than crashing the tick.
+                    if (idx < 0 || idx >= match.Inputs.Count || idx >= ws.AckedFrames.Length)
+                    {
+                        continue;
+                    }
                     var inputMap = match.Inputs[idx];
 
                     uint lastAck = ws.AckedFrames[idx];
