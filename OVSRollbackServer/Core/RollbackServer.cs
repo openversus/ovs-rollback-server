@@ -1332,7 +1332,7 @@ namespace OVS.Rollback.Core
                             f++;
                         }
                         ws.Payload.NumFrames[idx] = (byte)predictedCount;
-                        numPredictedOverrides = (ushort)predictedCount;
+                        numPredictedOverrides += (ushort)predictedCount;
                         ServerMetrics.InputPredictions.Add(predictedCount);
                     }
                 }
