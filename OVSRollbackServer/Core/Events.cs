@@ -137,7 +137,7 @@ namespace OVS.Rollback.Core
             if (Server.MementoMori)
             {
                 Task.Delay(30000).ContinueWith(_ => {
-                    SignalSender.MementoMori("Winding down normally after end of match");
+                    SignalSender.MementoMori("Winding down normally after end of match.");
                 });
             }
             return Task.CompletedTask;
