@@ -33,6 +33,12 @@ namespace OVS.Rollback.Common
         public static DIContainer? _diContainer;
         public static bool MatchEndDesyncWarningShown { get; internal set; } = false;
         public static bool ServerIsShuttingDown { get; internal set; } = false;
+        
+        // Version string to be replaced by the build script during compilation. Used for display in logs and other outputs to identify the version of the server.
+        // The string returned by:
+        //   "$(git log -1 --format="%at" | xargs -I{} date -d @{} +%Y.%m.%d.%H%M%S)-$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD)"
+        // Is the default production value/format during build
+        public static string OVSRollbackVersion { get; } = "1.0.0-default-version";
 
         internal static bool ShouldMoveLogfile { get => FinalLogFile.NotNullOrWhiteSpace; }
 
