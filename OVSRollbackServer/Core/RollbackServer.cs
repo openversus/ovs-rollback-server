@@ -284,11 +284,22 @@ namespace OVS.Rollback.Core
                     return;
                 }
 
-                if (header.Sequence <= player.LastSeqRecv)
+                // Input packets carry frame-keyed data and must never be dropped
+                // by the sequence gate. UDP reordering during a lag spike can
+                // cause a higher-sequence packet (e.g. an ack) to arrive before
+                // an Input from the burst, which would otherwise permanently
+                // discard the dropped Input's frames and cause desync. Dedup
+                // for Input is handled by TryAdd on the per-frame dictionary in
+                // HandleClientInput. All other message types are idempotent or
+                // time-sensitive, so out-of-order delivery is still discarded.
+                if (type != ClientMessageType.Input)
                 {
-                    return;
+                    if (header.Sequence <= player.LastSeqRecv)
+                    {
+                        return;
+                    }
+                    player.LastSeqRecv = header.Sequence;
                 }
-                player.LastSeqRecv = header.Sequence;
 
                 if (type == ClientMessageType.QualityData)
                 {
@@ -405,7 +416,13 @@ namespace OVS.Rollback.Core
                         // real participant (human or bot); spectators have PlayerIndex 8888
                         // and are filtered separately.
                         Inputs = new(config.MaxPlayers - config.NumSpectators),
-                        Workspace = new TickWorkspace(config.MaxPlayers),
+                        // Wire-protocol slot count excludes spectators: they
+                        // are recipients but never occupy a team-side slot.
+                        // Workspace.MaxPlayers sizes PlayerSnapshot (recipients,
+                        // incl. spectators); WireSlotCount sizes the payload
+                        // arrays that get serialized to the client.
+                        TeamSlotCount = config.MaxPlayers - config.NumSpectators,
+                        Workspace = new TickWorkspace(config.MaxPlayers, config.MaxPlayers - config.NumSpectators),
                         NumBots = config.NumBots,
                         BotIndices = new HashSet<int>(
                             config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
@@ -516,7 +533,9 @@ namespace OVS.Rollback.Core
                 IsSpectator = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
-                AckedFrames = new List<uint>(new uint[match.MaxPlayers]),
+                // Sized to wire-protocol slot count, not MaxPlayers — spectator
+                // slots are not in the PlayerInputAck wire format either.
+                AckedFrames = new List<uint>(new uint[match.TeamSlotCount]),
                 Ping = 0,
                 Ready = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
                 LastClientFrame = 0,
@@ -542,7 +561,11 @@ namespace OVS.Rollback.Core
 
             var reply = new NewConnectionReplyPayload {
                 Success = 0,
-                MatchNumPlayers = (byte)match.Players.Count,
+                // ActualPlayers = connected non-spectator count. Pre-spectator
+                // behavior was Players.Count, which equals this when no specs
+                // are connected — a spectator joining early must not inflate
+                // the value sent to later-joining players.
+                MatchNumPlayers = (byte)match.ActualPlayers,
                 PlayerIndex = (byte)newPlayer.PlayerIndex,
                 MatchDurationInFrames = match.DurationInFrames,
                 IsValidationServerDebugMode = 0
@@ -635,17 +658,20 @@ namespace OVS.Rollback.Core
                     continue;
                 }
 
-                var configValues = new List<ushort>(match.MaxPlayers);
-                for (int i = 0; i < match.MaxPlayers; i++)
+                // Note: the serializer ignores ConfigValues and writes its own
+                // PlayerConfigValues table for TeamSlotCount slots — this list
+                // only documents intent.
+                var configValues = new List<ushort>(match.TeamSlotCount);
+                for (int i = 0; i < match.TeamSlotCount; i++)
                 {
-                    //configValues.Add(mapping[i]);
-                    configValues.Add(mapping[i % (configValues.Capacity + 1)]);
+                    configValues.Add(mapping[i % mapping.Length]);
                 }
-                //configValues.Add(mapping[i % 4]);
 
                 var payload = new PlayersConfigurationDataPayload {
-                    //NumPlayers = (byte)count,
-                    NumPlayers = (byte)match.Players.Count,
+                    // Team-side participant count (humans + bots, no spectators).
+                    // match.Players.Count is the live connection count: +1 per
+                    // spectator, -1 per bot — both wrong for the wire.
+                    NumPlayers = (byte)match.TeamSlotCount,
                     ConfigValues = configValues
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
@@ -753,7 +779,7 @@ namespace OVS.Rollback.Core
         {
             if (player.IsSpectator)
             {
-                return; // Spectators don't send inputssf
+                return; // Spectators don't send inputs
             }
 
             lock (player.Lock)
@@ -764,7 +790,22 @@ namespace OVS.Rollback.Core
                 player.Disconnected = false;
             }
 
-            var histMap = match.Inputs[player.PlayerIndex];
+            int playerIdx = player.PlayerIndex;
+            if (playerIdx < 0 || playerIdx >= match.Inputs.Count)
+            {
+                // PlayerIndex sits outside the team-side slot range. The
+                // match-creation comment assumes PlayerIndex is contiguous
+                // 0..(TeamSlotCount-1) for non-spec players, but a matchmaker
+                // can violate that (sparse indices, off-by-one MaxPlayers,
+                // misclassified spec/bot). Drop the input rather than crash
+                // and bring down the whole match.
+                _logger.LogWarning(
+                    "Input from PlayerIndex {Idx} but match.Inputs has {Size} slots " +
+                    "(MatchId {MatchId}, IsSpectator {Spec}); dropping input.",
+                    playerIdx, match.Inputs.Count, match.MatchId, player.IsSpectator);
+                return;
+            }
+            var histMap = match.Inputs[playerIdx];
             for (byte i = 0; i < payload.NumFrames && i < payload.InputPerFrame.Count; i++)
             {
                 uint f = payload.StartFrame + i;
@@ -1198,7 +1239,7 @@ namespace OVS.Rollback.Core
                 float smoothRift;
                 lock (recipient.Lock)
                 {
-                    for (int i = 0; i < match.MaxPlayers && i < recipient.AckedFrames.Count; i++)
+                    for (int i = 0; i < match.TeamSlotCount && i < recipient.AckedFrames.Count; i++)
                         ws.AckedFrames[i] = recipient.AckedFrames[i];
                     lastClientFrame = recipient.LastClientFrame;
                     ping = recipient.Ping;
@@ -1215,6 +1256,12 @@ namespace OVS.Rollback.Core
                         continue; // Spectators don't send inputs
                     }
                     int idx = peer.PlayerIndex;
+                    // Defensive: same matchmaker sparsity concern as in
+                    // HandleClientInput. Skip rather than crashing the tick.
+                    if (idx < 0 || idx >= match.Inputs.Count || idx >= ws.AckedFrames.Length)
+                    {
+                        continue;
+                    }
                     var inputMap = match.Inputs[idx];
 
                     uint lastAck = ws.AckedFrames[idx];
@@ -1258,8 +1305,29 @@ namespace OVS.Rollback.Core
                         {
                             uint framesMissed = f - lastAck;
                             uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed);
-                            inputMap[f] = predicted;
-                            ws.Payload.InputPerFrame[idx].Add(predicted);
+
+                            // TryAdd, NOT inputMap[f] = predicted. The shared input
+                            // map is per-PlayerIndex across all recipients; if real
+                            // input or an earlier prediction already lives at frame f,
+                            // a blind overwrite would replace real data with a stale
+                            // neutral guess — and HandleClientInput uses TryAdd, so
+                            // late-arriving real inputs would silently fail to fix it.
+                            // Result: every other recipient reads the wrong value for
+                            // that frame, manifesting as teleporting/rollback. Reading
+                            // back what's in the map preserves the cbb8f7f desync fix
+                            // (all recipients see the same value for a given frame)
+                            // without trampling real inputs.
+                            uint emitted;
+                            if (inputMap.TryAdd(f, predicted))
+                            {
+                                emitted = predicted;
+                            }
+                            else
+                            {
+                                inputMap.TryGetValue(f, out emitted);
+                            }
+
+                            ws.Payload.InputPerFrame[idx].Add(emitted);
                             predictedCount++;
                             f++;
                         }
@@ -1269,7 +1337,14 @@ namespace OVS.Rollback.Core
                     }
                 }
 
-                ws.Payload.NumPlayers = (byte)ws.PlayerCount;
+                // NumPlayers is the first payload byte and the client parses the
+                // packet with it — it MUST equal the number of slots actually
+                // serialized (TeamSlotCount). ws.PlayerCount is the live
+                // connection count: it includes spectators (5 in a 2v2+1spec)
+                // and excludes bots (2 in a 2-human/2-bot match), both of which
+                // desync the byte from the real slot layout and make the client
+                // misparse everything after the StartFrame array.
+                ws.Payload.NumPlayers = (byte)match.TeamSlotCount;
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
                 ws.Payload.Rift = smoothRift;
@@ -1322,8 +1397,11 @@ namespace OVS.Rollback.Core
             };
 
             // ── Serialize directly into workspace buffer (SpanWriter, zero-alloc) ──
+            // Use TeamSlotCount (not MaxPlayers): spectators are recipients but
+            // do not occupy a wire slot. Inflating the slot count breaks clients
+            // that expect the team-side count fixed by the original protocol.
             int serializedLen = MessageSerializer.SerializePlayerInputTo(
-                header, ws.Payload, match.MaxPlayers, ws.SerializeBuffer);
+                header, ws.Payload, match.TeamSlotCount, ws.SerializeBuffer);
 
             // ── Compress into workspace buffer (output byte[] is pre-allocated) ──
             int compressedLen = CompressionHelper.CompressTo(
@@ -1390,7 +1468,13 @@ namespace OVS.Rollback.Core
                 header.Sequence = ++match.SequenceCounter;
             }
 
-            var buf = MessageSerializer.SerializeServerMessage(header, payload, match.MaxPlayers);
+            // TeamSlotCount, not MaxPlayers: slot-count-driven payloads
+            // (PlayersConfigurationData, PlayersStatus) must carry exactly the
+            // team-side slots. With MaxPlayers (5 in a 2v2+1spec) the config
+            // packet gained a phantom 5th entry whose identity value wraps
+            // around (PlayerConfigValues[4 % 4]) and DUPLICATES slot 0 —
+            // aliasing one real player's identity on every client.
+            var buf = MessageSerializer.SerializeServerMessage(header, payload, match.TeamSlotCount);
             var compressed = CompressionHelper.Compress(buf);
 
             // ── Diagnostic: log outbound message details ──

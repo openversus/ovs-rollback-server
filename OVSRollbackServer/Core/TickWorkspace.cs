@@ -10,12 +10,19 @@ namespace OVS.Rollback.Core
     /// </summary>
     public sealed class TickWorkspace
     {
+        // Recipient/peer capacity — sized to include spectators, since they
+        // are recipients in the broadcast loop.
         public readonly int MaxPlayers;
+
+        // Wire-protocol slot count — sized to (MaxPlayers - NumSpectators).
+        // Spectators occupy no slot in the PlayerInput packet; including them
+        // here would inflate the wire format and break the client's parser.
+        public readonly int WireSlotCount;
 
         // ── Pooled payload (inner lists cleared, never re-created) ──
         public readonly PlayerInputPayload Payload;
 
-        // ── Scratch array for acked frames ──
+        // ── Scratch array for acked frames (indexed by team-side PlayerIndex) ──
         public readonly uint[] AckedFrames;
 
         // ── Player snapshot (avoids ConcurrentDictionary.ToArray() every tick) ──
@@ -27,19 +34,20 @@ namespace OVS.Rollback.Core
         public readonly byte[] SerializeBuffer = new byte[4096];
         public readonly byte[] CompressBuffer = new byte[4096];
 
-        public TickWorkspace(int maxPlayers)
+        public TickWorkspace(int maxPlayers, int wireSlotCount)
         {
             MaxPlayers = maxPlayers;
-            AckedFrames = new uint[maxPlayers];
+            WireSlotCount = wireSlotCount;
+            AckedFrames = new uint[wireSlotCount];
             PlayerSnapshot = new KeyValuePair<string, PlayerInfo>[maxPlayers];
 
             Payload = new PlayerInputPayload {
-                StartFrame = new List<uint>(maxPlayers),
-                NumFrames = new List<byte>(maxPlayers),
-                InputPerFrame = new List<List<uint>>(maxPlayers)
+                StartFrame = new List<uint>(wireSlotCount),
+                NumFrames = new List<byte>(wireSlotCount),
+                InputPerFrame = new List<List<uint>>(wireSlotCount)
             };
 
-            for (int i = 0; i < maxPlayers; i++)
+            for (int i = 0; i < wireSlotCount; i++)
             {
                 Payload.StartFrame.Add(0);
                 Payload.NumFrames.Add(0);
@@ -69,7 +77,7 @@ namespace OVS.Rollback.Core
         /// </summary>
         public void ResetForRecipient()
         {
-            for (int i = 0; i < MaxPlayers; i++)
+            for (int i = 0; i < WireSlotCount; i++)
             {
                 Payload.StartFrame[i] = 0;
                 Payload.NumFrames[i] = 0;
@@ -82,7 +90,7 @@ namespace OVS.Rollback.Core
             Payload.PacketLossPercent = 0;
             Payload.Rift = 0f;
             Payload.ChecksumAckFrame = 0;
-            Array.Clear(AckedFrames, 0, MaxPlayers);
+            Array.Clear(AckedFrames, 0, WireSlotCount);
         }
     }
 }

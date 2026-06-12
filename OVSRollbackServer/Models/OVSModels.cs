@@ -53,7 +53,11 @@ namespace OVS.Rollback.Models
                 int count = 0;
                 foreach (var player in Players)
                 {
-                    if (player.IsSpectator)
+                    // Recognize spectators by the explicit flag OR the
+                    // PlayerIndex >= 8888 sentinel convention — matchmakers
+                    // have used either. Missing a spectator here inflates
+                    // TeamSlotCount and corrupts the wire-protocol slot count.
+                    if (player.IsSpectator || player.PlayerIndex >= 8888)
                     {
                         count++;
                     }
