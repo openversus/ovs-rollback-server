@@ -558,7 +558,11 @@ namespace OVS.Rollback.Core
 
             var reply = new NewConnectionReplyPayload {
                 Success = 0,
-                MatchNumPlayers = (byte)match.Players.Count,
+                // ActualPlayers = connected non-spectator count. Pre-spectator
+                // behavior was Players.Count, which equals this when no specs
+                // are connected — a spectator joining early must not inflate
+                // the value sent to later-joining players.
+                MatchNumPlayers = (byte)match.ActualPlayers,
                 PlayerIndex = (byte)newPlayer.PlayerIndex,
                 MatchDurationInFrames = match.DurationInFrames,
                 IsValidationServerDebugMode = 0
@@ -651,17 +655,20 @@ namespace OVS.Rollback.Core
                     continue;
                 }
 
-                var configValues = new List<ushort>(match.MaxPlayers);
-                for (int i = 0; i < match.MaxPlayers; i++)
+                // Note: the serializer ignores ConfigValues and writes its own
+                // PlayerConfigValues table for TeamSlotCount slots — this list
+                // only documents intent.
+                var configValues = new List<ushort>(match.TeamSlotCount);
+                for (int i = 0; i < match.TeamSlotCount; i++)
                 {
-                    //configValues.Add(mapping[i]);
-                    configValues.Add(mapping[i % (configValues.Capacity + 1)]);
+                    configValues.Add(mapping[i % mapping.Length]);
                 }
-                //configValues.Add(mapping[i % 4]);
 
                 var payload = new PlayersConfigurationDataPayload {
-                    //NumPlayers = (byte)count,
-                    NumPlayers = (byte)match.Players.Count,
+                    // Team-side participant count (humans + bots, no spectators).
+                    // match.Players.Count is the live connection count: +1 per
+                    // spectator, -1 per bot — both wrong for the wire.
+                    NumPlayers = (byte)match.TeamSlotCount,
                     ConfigValues = configValues
                 };
                 SendServerMessage(match, player, ServerMessageType.PlayersConfigurationData, payload);
@@ -1327,7 +1334,14 @@ namespace OVS.Rollback.Core
                     }
                 }
 
-                ws.Payload.NumPlayers = (byte)ws.PlayerCount;
+                // NumPlayers is the first payload byte and the client parses the
+                // packet with it — it MUST equal the number of slots actually
+                // serialized (TeamSlotCount). ws.PlayerCount is the live
+                // connection count: it includes spectators (5 in a 2v2+1spec)
+                // and excludes bots (2 in a 2-human/2-bot match), both of which
+                // desync the byte from the real slot layout and make the client
+                // misparse everything after the StartFrame array.
+                ws.Payload.NumPlayers = (byte)match.TeamSlotCount;
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
                 ws.Payload.Rift = smoothRift;
@@ -1451,7 +1465,13 @@ namespace OVS.Rollback.Core
                 header.Sequence = ++match.SequenceCounter;
             }
 
-            var buf = MessageSerializer.SerializeServerMessage(header, payload, match.MaxPlayers);
+            // TeamSlotCount, not MaxPlayers: slot-count-driven payloads
+            // (PlayersConfigurationData, PlayersStatus) must carry exactly the
+            // team-side slots. With MaxPlayers (5 in a 2v2+1spec) the config
+            // packet gained a phantom 5th entry whose identity value wraps
+            // around (PlayerConfigValues[4 % 4]) and DUPLICATES slot 0 —
+            // aliasing one real player's identity on every client.
+            var buf = MessageSerializer.SerializeServerMessage(header, payload, match.TeamSlotCount);
             var compressed = CompressionHelper.Compress(buf);
 
             // ── Diagnostic: log outbound message details ──
