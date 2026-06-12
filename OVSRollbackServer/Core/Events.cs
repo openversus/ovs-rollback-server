@@ -1,3 +1,4 @@
+using OVS.Rollback.Common;
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Models;
 using OVS.Rollback.Utils;
@@ -100,6 +101,7 @@ namespace OVS.Rollback.Core
 
         public static Task SendAllPlayersDisconnectedEvent(object? sender, StatusEventArgs e)
         {
+            Statics.ServerIsShuttingDown = true;
             FireMatchStatusEvent(OnAllPlayesrDisconnected, sender, e);
             return Task.CompletedTask;
         }
@@ -130,6 +132,7 @@ namespace OVS.Rollback.Core
 
         public static Task SendMatchEndEvent(object? sender, StatusEventArgs e)
         {
+            Statics.ServerIsShuttingDown = true;
             FireMatchStatusEvent(OnMatchEnd, sender, e);
             if (Server.MementoMori)
             {
@@ -148,6 +151,7 @@ namespace OVS.Rollback.Core
 
         public static Task SendMementoMoriEvent(object? sender, StatusEventArgs e)
         {
+            Statics.ServerIsShuttingDown = true;
             FireMatchStatusEvent(OnMementoMori, sender, e);
             SignalSender.MementoMori();
             return Task.CompletedTask;
@@ -161,6 +165,7 @@ namespace OVS.Rollback.Core
 
         public static Task SendTerminatingErrorEvent(object? sender, StatusEventArgs e)
         {
+            Statics.ServerIsShuttingDown = true;
             FireMatchStatusEvent(OnTerminatingError, sender, e);
             if (!Server.cts.IsCancellationRequested)
             {

@@ -208,7 +208,8 @@ namespace OVS.Rollback.Configuration
             performanceSettings.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", performanceSettings.UseAdaptiveSpinThreshold);
             performanceSettings.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", performanceSettings.MetricsSamplingInterval);
             performanceSettings.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", performanceSettings.TargetFrameRate);
-            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", performanceSettings.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
+            // Env var is in MB; default 1024 MB (1 GB) to avoid accidentally OOMing machines with low RAM if GC is too aggressive. Adjust as needed for your server's RAM.
+            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
 
             // Networking settings
             networkingSettings.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", networkingSettings.ReceiveBufferSize);
@@ -245,6 +246,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             desyncDetectionSettings.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", desyncDetectionSettings.EnableDesyncDetection);
+            desyncDetectionSettings.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", desyncDetectionSettings.KickDesyncingPlayer);
             desyncDetectionSettings.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", desyncDetectionSettings.ChecksumRetentionFrames);
             desyncDetectionSettings.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", desyncDetectionSettings.ChecksumCleanupInterval);
             desyncDetectionSettings.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", desyncDetectionSettings.MaxDesyncCount);
@@ -295,7 +297,8 @@ namespace OVS.Rollback.Configuration
             Performance.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", Performance.UseAdaptiveSpinThreshold);
             Performance.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", Performance.MetricsSamplingInterval);
             Performance.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", Performance.TargetFrameRate);
-            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", Performance.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
+            // Env var is in MB; default 1024 MB (see note above).
+            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
 
             // Networking settings
             Networking.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", Networking.ReceiveBufferSize);
@@ -332,6 +335,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             DesyncDetection.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", DesyncDetection.EnableDesyncDetection);
+            DesyncDetection.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", DesyncDetection.KickDesyncingPlayer);
             DesyncDetection.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", DesyncDetection.ChecksumRetentionFrames);
             DesyncDetection.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", DesyncDetection.ChecksumCleanupInterval);
             DesyncDetection.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", DesyncDetection.MaxDesyncCount);
@@ -447,6 +451,12 @@ namespace OVS.Rollback.Configuration
     public class DesyncDetectionSettings
     {
         public bool EnableDesyncDetection { get; set; } = true;
+        /// <summary>
+        /// When true, a player exceeding MaxDesyncCount is sent a Kick message and
+        /// marked disconnected. When false (default), the kick is only logged —
+        /// log-only mode for validating detection before enforcement.
+        /// </summary>
+        public bool KickDesyncingPlayer { get; set; } = false;
         public uint ChecksumRetentionFrames { get; set; } = 300;
         public uint ChecksumCleanupInterval { get; set; } = 200;
         public int MaxDesyncCount { get; set; } = 10;

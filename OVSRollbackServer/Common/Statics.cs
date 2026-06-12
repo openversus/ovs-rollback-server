@@ -31,6 +31,8 @@ namespace OVS.Rollback.Common
         internal static string FinalLogFile = String.Empty;
         internal static List<string> PreLoggerMessages = [];
         public static DIContainer? _diContainer;
+        public static bool MatchEndDesyncWarningShown { get; internal set; } = false;
+        public static bool ServerIsShuttingDown { get; internal set; } = false;
 
         internal static bool ShouldMoveLogfile { get => FinalLogFile.NotNullOrWhiteSpace; }
 

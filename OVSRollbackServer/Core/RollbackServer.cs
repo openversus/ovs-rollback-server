@@ -100,10 +100,7 @@ namespace OVS.Rollback.Core
             }
 
             _running = true;
-
-            
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
-
             SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
 
             // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
@@ -125,7 +122,8 @@ namespace OVS.Rollback.Core
             if (!_running) return;
             _running = false;
 
-            try {
+            try
+            {
                 _socket.Shutdown(SocketShutdown.Both);
             }
             catch { }
@@ -141,7 +139,8 @@ namespace OVS.Rollback.Core
 
             if (_udpTask is not null)
             {
-                try {
+                try
+                {
                     await _udpTask;
                 }
                 catch (OperationCanceledException) { }
@@ -174,7 +173,6 @@ namespace OVS.Rollback.Core
                 {
 
                     var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anyEp);
-                    var data = buffer[..result.ReceivedBytes].ToArray();
                     var remote = (IPEndPoint)result.RemoteEndPoint;
 
                     if (!connections.Contains(remote.Address.ToString()))
@@ -185,8 +183,33 @@ namespace OVS.Rollback.Core
 
                     ServerMetrics.PacketsReceived.Add(1);
 
-                    // NEW: Handle synchronously - we're already on ThreadPool, no need for Task
-                    HandleMessage(data, result.ReceivedBytes, remote);
+                    int receivedBytes = result.ReceivedBytes;
+
+                    // Decompress into a fresh byte[] that is independent of the shared
+                    // receive buffer, so it is safe to hand off to an async path.
+                    // C++ catch-all equivalent: on failure, treat as uncompressed.
+                    byte[] decompressed;
+                    try { decompressed = CompressionHelper.Decompress(buffer[..receivedBytes]); }
+                    catch (Exception ex)
+                    {
+                        Log.DecompressionFailed(_logger, ex, receivedBytes, remote.ToString());
+                        decompressed = buffer[..receivedBytes];
+                    }
+
+                    if (decompressed.Length > 0 &&
+                        (ClientMessageType)decompressed[0] == ClientMessageType.NewConnection)
+                    {
+                        // Offload onto the thread pool — the HTTP fetch inside
+                        // HandleNewConnection can take hundreds of milliseconds and
+                        // must not block the receive loop.
+                        _ = HandleNewConnectionMessage(decompressed, remote);
+                    }
+                    else
+                    {
+                        // Fast path: all other message types complete in microseconds,
+                        // handled synchronously before the next ReceiveFromAsync.
+                        HandleMessage(decompressed, remote);
+                    }
                 }
                 catch (OperationCanceledException) { break; }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { break; }
@@ -202,47 +225,43 @@ namespace OVS.Rollback.Core
         //  Message Dispatch
         // ═══════════════════════════════════════════
 
-        private void HandleMessage(byte[] buffer, int length, IPEndPoint remote)
+        /// <summary>
+        /// Handles a NewConnection packet. Runs as a fire-and-forget task so the
+        /// HTTP fetch inside <see cref="HandleNewConnection"/> does not block the
+        /// UDP receive loop. The caller must pass an already-decompressed,
+        /// independently owned byte array (not the shared receive buffer).
+        /// </summary>
+        private async Task HandleNewConnectionMessage(byte[] decompressed, IPEndPoint remote)
         {
-            var config = ServerConfiguration.Instance;
-
-
             try
             {
-                // ── Hex dump of first 16 raw bytes for diagnosis ──
-                // string rawHex = Convert.ToHexString(buffer, 0, Math.Min(length, 16));
-                //        _logger.LogDebug("Received {Len} bytes from {Remote} raw:[{Hex}]",
-                //            length, remote, rawHex);
-
-                // ── Decompress with C++ catch-all pattern ──
-                //
-                //  C++ equivalent:
-                //    try { decompressedData = decompressData(receivedData); }
-                //    catch (...) { decompressedData = receivedData; }
-                //
-
-                byte[] decompressed;
-                try
+                var clientMsg = MessageSerializer.ParseClientMessage(decompressed);
+                if (clientMsg is null)
                 {
-                    // Pass as ReadOnlySpan<byte> — avoids allocating a new byte[] slice
-                    //    decompressed = CompressionHelper.Decompress(new ReadOnlySpan<byte>(buffer, 0, length));
-                    decompressed = CompressionHelper.Decompress(buffer[..length]);
-                }
-                catch (Exception dex)
-                {
-                    // Matches C++: catch(...) { decompressedData = receivedData; }
-                    _logger.LogWarning(dex,
-                        "Decompress failed for {Len} bytes from {Remote}, using raw data",
-                        length, remote);
-                    decompressed = buffer[..length];
+                    _logger.LogWarning(
+                        "ParseClientMessage returned null for NewConnection from {Remote}",
+                        remote);
+                    return;
                 }
 
-                // ── Hex dump of first 16 decompressed bytes ──
-                // string decHex = Convert.ToHexString(decompressed, 0, Math.Min(decompressed.Length, 16));
-                //        _logger.LogDebug(
-                //           "Decompressed {InLen}->{OutLen} bytes fallback={Fallback} dec:[{Hex}]",
-                //           length, decompressed.Length, usedRawFallback, decHex);
+                var payload = (NewConnectionPayload)clientMsg.Value.Payload;
+                await HandleNewConnection(payload, remote);
+            }
+            catch (Exception ex)
+            {
+                Log.HandleError(_logger, ex);
+            }
+        }
 
+        /// <summary>
+        /// Handles all non-NewConnection messages. Called synchronously on the UDP
+        /// receive loop. <paramref name="decompressed"/> is already decompressed and
+        /// owned by the caller.
+        /// </summary>
+        private void HandleMessage(byte[] decompressed, IPEndPoint remote)
+        {
+            try
+            {
                 var clientMsg = MessageSerializer.ParseClientMessage(decompressed);
                 if (clientMsg is null)
                 {
@@ -255,31 +274,15 @@ namespace OVS.Rollback.Core
                     return;
                 }
 
-                //        _logger.LogDebug("Parsed {Type} seq={Seq} from {Remote}",
-                //           clientMsg.Value.Header.Type, clientMsg.Value.Header.Sequence, remote);
-
                 var header = clientMsg.Value.Header;
                 var type = header.Type;
 
-                MatchState? match = null;
-                PlayerInfo? player = null;
-
-                if (type == ClientMessageType.NewConnection)
+                string key = $"{remote.Address}:{remote.Port}";
+                if (!_players.TryGetValue(key, out var player) || player is null)
                 {
-                    var payload = (NewConnectionPayload)clientMsg.Value.Payload;
-                    // NEW: Synchronous - HTTP fetch blocks but we're on ThreadPool already
-                    player = HandleNewConnection(payload, remote);
-                    if (player != null)
-                        _matches.TryGetValue(player.MatchId, out match);
+                    return;
                 }
-                else
-                {
-                    string key = $"{remote.Address}:{remote.Port}";
-                    if (_players.TryGetValue(key, out player) && player != null)
-                        _matches.TryGetValue(player.MatchId, out match);
-                }
-
-                if (player is null || match is null)
+                if (!_matches.TryGetValue(player.MatchId, out var match) || match is null)
                 {
                     return;
                 }
@@ -360,14 +363,14 @@ namespace OVS.Rollback.Core
         //  Connection & Setup
         // ═══════════════════════════════════════════
 
-        private PlayerInfo? HandleNewConnection(
+        private async Task<PlayerInfo?> HandleNewConnection(
             NewConnectionPayload payload, IPEndPoint remote)
         {
             string key = $"{remote.Address}:{remote.Port}";
             var matchData = payload.MatchData;
 
             MatchState? match;
-            _matchCreationLock.Wait();  // Synchronous wait (was async)
+            await _matchCreationLock.WaitAsync();
             OVSMatchConfig? config = null;
 
             try
@@ -376,9 +379,7 @@ namespace OVS.Rollback.Core
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
 
-                    // Synchronous HTTP call - we're on ThreadPool, blocking is OK
-                    config = _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key)
-                        .GetAwaiter().GetResult();
+                    config = await _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key);
                     if (config is null)
                     {
                         Log.FetchConfigFailed(_logger, matchData.MatchId, new InvalidDataException("Match config is null."));
@@ -468,6 +469,7 @@ namespace OVS.Rollback.Core
             }
             finally { _matchCreationLock.Release(); }
 
+            // Fast path: player already fully registered (retransmit / reconnect).
             if (_players.TryGetValue(key, out var existing))
             {
                 return existing;
@@ -478,24 +480,16 @@ namespace OVS.Rollback.Core
             string playerCharacter = "Unknown";
             ushort payloadIndex = payload.PlayerData.PlayerIndex;
 
-            if (match.Players.TryGetValue(key, out var existingPlayer))
+            if (null != matchConfig && matchConfig != default)
             {
-                return match.Players[key];
-            }
-
-            else
-            {
-                if (null != matchConfig && matchConfig != default)
+                foreach (OvsPlayer? player in matchConfig.Players)
                 {
-                    foreach (OvsPlayer? player in matchConfig.Players)
+                    if (player?.PlayerIndex == payloadIndex)
                     {
-                        if (player?.PlayerIndex == payloadIndex)
-                        {
-                            playerID = player?.PlayerId ?? "Unknown";
-                            playerName = player?.PlayerName ?? "Unknown";
-                            playerCharacter = player?.PlayerCharacter ?? "Unknown";
-                            break;
-                        }
+                        playerID = player?.PlayerId ?? "Unknown";
+                        playerName = player?.PlayerName ?? "Unknown";
+                        playerCharacter = player?.PlayerCharacter ?? "Unknown";
+                        break;
                     }
                 }
             }
@@ -543,7 +537,16 @@ namespace OVS.Rollback.Core
                 Rift = 0
             };
 
-            match.Players[key] = newPlayer;
+            // Atomically claim the player slot. If a duplicate connection packet
+            // raced us here, GetOrAdd returns the winner's PlayerInfo — skip all
+            // side-effects (join logs, events, ping-phase start) for the loser.
+            var registered = match.Players.GetOrAdd(key, newPlayer);
+            if (!ReferenceEquals(registered, newPlayer))
+            {
+                _players.TryAdd(key, registered);
+                return registered;
+            }
+
             _players[key] = newPlayer;
             ServerMetrics.PlayersConnected.Add(1);
             Log.PlayerJoined(_logger, payload.PlayerData.PlayerIndex, newPlayer.PlayerId, newPlayer.PlayerName, newPlayer.PlayerCharacter, matchData.MatchId);
@@ -576,7 +579,9 @@ namespace OVS.Rollback.Core
             // never increment match.ActualPlayers (which is derived from
             // match.Players runtime dict). Subtract them out of the expected
             // count, otherwise the ready check waits forever.
-            if (match.ActualPlayers == match.MaxPlayers - match.NumSpectators - match.NumBots)
+            // >= instead of == so a late retransmit can't silently miss the
+            // threshold; TryStartPingPhase guarantees exactly one start.
+            if (match.ActualPlayers >= match.MaxPlayers - match.NumSpectators - match.NumBots)
             {
                 StartPingPhase(match);
             }
@@ -590,8 +595,12 @@ namespace OVS.Rollback.Core
 
         private void StartPingPhase(MatchState match)
         {
-            var config = ServerConfiguration.Instance;
+            if (!match.TryStartPingPhase())
+            {
+                return;
+            }
 
+            var config = ServerConfiguration.Instance;
 
             Log.PingPhaseStarted(_logger, match.MatchId);
             _ = Events.SendPingPhaseEvent(this, StatusEventArgs.CreateNew(
@@ -610,6 +619,10 @@ namespace OVS.Rollback.Core
             timer = new Timer(_ => {
                 if (count >= config.PingPhase.TotalPings || !_running)
                 {
+                    // Stop the timer before broadcasting so no further callbacks are
+                    // queued. Change() prevents new ticks without blocking on an
+                    // already-running callback the way Dispose(WaitHandle) would.
+                    timer?.Change(Timeout.Infinite, Timeout.Infinite);
                     timer?.Dispose();
                     BroadcastPlayersConfiguration(match);
                     return;
@@ -637,6 +650,14 @@ namespace OVS.Rollback.Core
         }
         private void BroadcastPlayersConfiguration(MatchState match)
         {
+            // Exactly one broadcast per match lifetime — guards against the timer
+            // disposal race where a queued callback fires after the terminal tick
+            // already broadcast.
+            if (!match.TryBroadcastPlayersConfiguration())
+            {
+                return;
+            }
+
             //ReadOnlySpan<ushort> mapping = [0, 256, 513, 769];
             ReadOnlySpan<ushort> mapping = [0, 255, 512, 768, 1024, 1280, 1536, 1792];
             //int count = match.Players.Count;
@@ -812,6 +833,287 @@ namespace OVS.Rollback.Core
                 histMap.TryAdd(f, payload.InputPerFrame[i]);
             }
 
+            // ── Buffer per-frame checksums sent by this client ──
+            if (ServerConfiguration.Instance.DesyncDetection.EnableDesyncDetection)
+            {
+                bool buffered = false;
+                for (byte i = 0; i < payload.NumChecksums && i < payload.ChecksumPerFrame.Count; i++)
+                {
+                    uint f = payload.StartFrame + i;
+
+                    // Skip frames already evaluated — retransmits must not
+                    // resurrect a frame that was removed after evaluation.
+                    if (f <= match.LastHandledChecksumFrame) continue;
+
+                    var frameMap = match.FrameChecksums.GetOrAdd(
+                        f, _ => new ConcurrentDictionary<int, uint>());
+                    frameMap.TryAdd(playerIdx, payload.ChecksumPerFrame[i]);
+                    buffered = true;
+                }
+
+                if (buffered)
+                {
+                    ProcessChecksums(match);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Evaluates every frame in <see cref="MatchState.FrameChecksums"/> that now
+        /// has a checksum from every active (non-spectator, non-bot, connected)
+        /// player. Agreement advances <see cref="MatchState.LastVerifiedFrame"/> (echoed
+        /// to clients as ChecksumAckFrame); disagreement logs the desync, increments the
+        /// outlier's <see cref="PlayerInfo.DesyncCount"/>, and optionally kicks them.
+        /// Evaluated frames are removed immediately, so each frame is judged exactly once.
+        /// Runs on the UDP receive path — never on the hot tick loop.
+        /// </summary>
+        private void ProcessChecksums(MatchState match)
+        {
+            var config = ServerConfiguration.Instance.DesyncDetection;
+
+            // Disconnected players never send further checksums; excluding them
+            // prevents the watermarks from stalling when a player drops mid-match.
+            int expectedPlayers = 0;
+            foreach (var kvp in match.Players)
+            {
+                if (!kvp.Value.IsSpectator && !kvp.Value.Disconnected &&
+                    !match.BotIndices.Contains(kvp.Value.PlayerIndex))
+                {
+                    expectedPlayers++;
+                }
+            }
+            if (expectedPlayers < 2) return; // Nothing to compare.
+
+            // Collect fully-reported frames and evaluate them in ascending order so
+            // the watermarks advance monotonically. A frame whose straggler report
+            // arrives after a later frame was already evaluated is skipped — benign,
+            // since checksum divergence persists into subsequent frames.
+            List<uint>? ready = null;
+            foreach (var frameEntry in match.FrameChecksums)
+            {
+                if (frameEntry.Key > match.LastHandledChecksumFrame &&
+                    frameEntry.Value.Count >= expectedPlayers)
+                {
+                    (ready ??= []).Add(frameEntry.Key);
+                }
+            }
+            if (ready is null) return;
+            ready.Sort();
+
+            foreach (uint frame in ready)
+            {
+                // Claim the frame; if another thread evaluated it first, skip.
+                if (!match.FrameChecksums.TryRemove(frame, out var frameMap)) continue;
+
+                // ── Majority vote: checksum value → count of players reporting it ──
+                // Heap allocation is fine here; this is off the hot tick path.
+                var freq = new Dictionary<uint, int>(frameMap.Count);
+                foreach (var entry in frameMap)
+                {
+                    freq.TryGetValue(entry.Value, out int c);
+                    freq[entry.Value] = c + 1;
+                }
+
+                int maxCount = 0;
+                foreach (var kv in freq)
+                    if (kv.Value > maxCount) maxCount = kv.Value;
+
+                int tiedGroupCount = 0;
+                foreach (var kv in freq)
+                    if (kv.Value == maxCount) tiedGroupCount++;
+
+                uint trustedChecksum;
+                if (tiedGroupCount == 1)
+                {
+                    trustedChecksum = 0;
+                    foreach (var kv in freq)
+                    {
+                        if (kv.Value == maxCount) { trustedChecksum = kv.Key; break; }
+                    }
+                }
+                else
+                {
+                    // Tie: always 1-1 in a 2-player match, or an even split (2-2)
+                    // in larger lobbies. Trust the checksum reported by the player
+                    // with the most stable connection over the whole match.
+                    trustedChecksum = ResolveChecksumTie(match, frameMap, freq, maxCount);
+                }
+
+                if (maxCount >= expectedPlayers)
+                {
+                    // All players agreed — advance the verified watermark.
+                    match.TryAdvanceVerifiedFrame(frame);
+                    match.TryAdvanceHandledChecksumFrame(frame);
+                    ServerMetrics.ChecksumsProcessed.Add(1);
+                    continue;
+                }
+
+                ServerMetrics.DesyncsDetected.Add(1);
+
+                PlayerInfo? trustedPlayer = FindBestQualityPlayerForChecksum(
+                    match, frameMap, trustedChecksum);
+
+                // Flag every player whose checksum disagrees with the trusted one.
+                foreach (var entry in frameMap)
+                {
+                    if (entry.Value == trustedChecksum) continue;
+
+                    PlayerInfo? outlier = null;
+                    foreach (var kvp in match.Players)
+                    {
+                        if (kvp.Value.PlayerIndex == entry.Key)
+                        {
+                            outlier = kvp.Value;
+                            break;
+                        }
+                    }
+
+                    if (outlier is null)
+                    {
+                        continue;
+                    }
+
+                    if (!Statics.ServerIsShuttingDown && !Statics.MatchEndDesyncWarningShown)
+                    {
+                        Log.DesyncDetected(_logger, frame,
+                            (ushort)(trustedPlayer?.PlayerIndex ?? 0), trustedPlayer?.PlayerName,
+                            trustedChecksum.ToString("X8"),
+                            (ushort)entry.Key, outlier.PlayerName, entry.Value.ToString("X8"));
+                    }
+
+                    if (outlier.FirstDesyncFrame == 0)
+                    {
+                        outlier.FirstDesyncFrame = frame;
+                    }
+
+                    outlier.DesyncCount++;
+
+                    if (config.MaxDesyncCount > 0 &&
+                        outlier.DesyncCount >= config.MaxDesyncCount)
+                    {
+                        if (Statics.ServerIsShuttingDown)
+                        {
+                            if (!Statics.MatchEndDesyncWarningShown)
+                            {
+                                _logger.LogWarning(
+                                    "Server is shutting down; skipping kick for player {Index} (name: {PlayerName}) in match {MatchId} after {Count} desyncs (first at frame {First})",
+                                    outlier.PlayerIndex, outlier.PlayerName, match.MatchId,
+                                    outlier.DesyncCount, outlier.FirstDesyncFrame);
+                                Statics.MatchEndDesyncWarningShown = true;
+                            }
+                            continue;
+                        }
+                        if (config.KickDesyncingPlayer)
+                        {
+                            var kickPayload = new KickPayload { Reason = 2 /* desync */, Param1 = frame };
+                            SendServerMessage(match, outlier, ServerMessageType.Kick, kickPayload);
+                            outlier.Disconnected = true;
+
+                            _logger.LogWarning(
+                                "Kicked player {Index} (name: {PlayerName}) from match {MatchId} " +
+                                "after {Count} desyncs (first at frame {First})",
+                                outlier.PlayerIndex, outlier.PlayerName, match.MatchId,
+                                outlier.DesyncCount, outlier.FirstDesyncFrame);
+                        }
+                        else
+                        {
+                            _logger.LogWarning(
+                                "Would kick player {Index} (name: {PlayerName}) from match {MatchId} " +
+                                "after {Count} desyncs (first at frame {First})",
+                                outlier.PlayerIndex, outlier.PlayerName, match.MatchId,
+                                outlier.DesyncCount, outlier.FirstDesyncFrame);
+                        }
+                    }
+                }
+
+                match.TryAdvanceHandledChecksumFrame(frame);
+            }
+        }
+
+        /// <summary>
+        /// Resolves a checksum tie by returning the checksum reported by the player
+        /// with the best connection-stability score among the tied groups.
+        /// </summary>
+        private uint ResolveChecksumTie(
+            MatchState match,
+            ConcurrentDictionary<int, uint> frameMap,
+            Dictionary<uint, int> freq,
+            int maxCount)
+        {
+            double bestScore = double.MaxValue;
+            uint bestChecksum = 0;
+            bool found = false;
+
+            foreach (var kvp in match.Players)
+            {
+                var player = kvp.Value;
+                if (player.IsSpectator) continue;
+                if (!frameMap.TryGetValue(player.PlayerIndex, out uint playerChecksum)) continue;
+                if (!freq.TryGetValue(playerChecksum, out int groupCount)) continue;
+                if (groupCount != maxCount) continue;
+
+                double score = ConnectionStabilityScore(player);
+                if (!found || score < bestScore)
+                {
+                    bestScore = score;
+                    bestChecksum = playerChecksum;
+                    found = true;
+                }
+            }
+
+            return bestChecksum;
+        }
+
+        /// <summary>
+        /// Returns the player on the trusted side with the best connection quality,
+        /// used as the reference player in desync log messages.
+        /// </summary>
+        private PlayerInfo? FindBestQualityPlayerForChecksum(
+            MatchState match,
+            ConcurrentDictionary<int, uint> frameMap,
+            uint targetChecksum)
+        {
+            double bestScore = double.MaxValue;
+            PlayerInfo? best = null;
+
+            foreach (var kvp in match.Players)
+            {
+                var player = kvp.Value;
+                if (player.IsSpectator) continue;
+                if (!frameMap.TryGetValue(player.PlayerIndex, out uint playerChecksum)) continue;
+                if (playerChecksum != targetChecksum) continue;
+
+                double score = ConnectionStabilityScore(player);
+                if (best is null || score < bestScore)
+                {
+                    bestScore = score;
+                    best = player;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Scalar connection/simulation stability score; lower = more trusted.
+        /// Primary: Welford ping variance (ms²) + rift variance scaled to ms² via
+        /// TargetFrameTime², so both terms share a scale. Fallback (too few samples):
+        /// instantaneous ping/rift offset high enough that it never beats a player
+        /// with real match-long variance data.
+        /// </summary>
+        private double ConnectionStabilityScore(PlayerInfo player)
+        {
+            bool hasPingVariance = player.PingVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
+            bool hasRiftVariance = player.RiftVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
+
+            if (hasPingVariance && hasRiftVariance)
+            {
+                double riftVarianceMs2 = player.RiftVariance * TargetFrameTime * TargetFrameTime;
+                return player.PingVariance + riftVarianceMs2;
+            }
+
+            const double FallbackOffset = 1_000_000.0;
+            return FallbackOffset + player.SmoothedPing + MathF.Abs(player.SmoothRift) * TargetFrameTime;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -923,6 +1225,28 @@ namespace OVS.Rollback.Core
             player.HasNewPing = false;
             player.HasNewFrame = false;
 
+            // ── Welford online variance: ping ──
+            // One sample per committed ping update, under player.Lock (held by caller).
+            {
+                player.PingVarianceSampleCount++;
+                double delta = player.SmoothedPing - player.PingVarianceMean;
+                player.PingVarianceMean += delta / player.PingVarianceSampleCount;
+                double delta2 = player.SmoothedPing - player.PingVarianceMean;
+                player.PingVarianceM2 += delta * delta2;
+            }
+
+            // ── Welford online variance: rift ──
+            // Absolute rift so the variance reflects deviation magnitude
+            // regardless of direction (ahead vs. behind).
+            {
+                double sample = MathF.Abs(player.SmoothRift);
+                player.RiftVarianceSampleCount++;
+                double delta = sample - player.RiftVarianceMean;
+                player.RiftVarianceMean += delta / player.RiftVarianceSampleCount;
+                double delta2 = sample - player.RiftVarianceMean;
+                player.RiftVarianceM2 += delta * delta2;
+            }
+
             // Metrics — read-only, after all state mutations
             ServerMetrics.RiftValue.Record(player.SmoothRift);
             ServerMetrics.RiftError.Record(riftError);
@@ -937,7 +1261,7 @@ namespace OVS.Rollback.Core
             if (player.SmoothRift > 1 || player.SmoothRift < -1 || player.SmoothedPing > 254)
             {
                 Log.RiftInfo(_logger,
-                    player.MatchId, player.PlayerIndex, player.Ping, player.SmoothRift,
+                    player.MatchId, player.PlayerIndex, player.PlayerName, player.Ping, player.SmoothRift,
                     player.Rift, predictedClientFrame, serverFrame);
             }
 
@@ -1332,7 +1656,7 @@ namespace OVS.Rollback.Core
                             f++;
                         }
                         ws.Payload.NumFrames[idx] = (byte)predictedCount;
-                        numPredictedOverrides = (ushort)predictedCount;
+                        numPredictedOverrides += (ushort)predictedCount;
                         ServerMetrics.InputPredictions.Add(predictedCount);
                     }
                 }
@@ -1348,6 +1672,9 @@ namespace OVS.Rollback.Core
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
                 ws.Payload.Rift = smoothRift;
+                // Highest frame on which all active players' checksums agreed —
+                // lets the client free rollback history older than this frame.
+                ws.Payload.ChecksumAckFrame = match.LastVerifiedFrame;
 
                 // ── Zero-alloc serialize → compress → send (with pre-allocated sequence) ──
                 uint playerSequence = sequenceBase + (uint)r;
@@ -1372,6 +1699,26 @@ namespace OVS.Rollback.Core
                         if (kvp.Key < minKeep)
                             histMap.TryRemove(kvp.Key, out _);
                     }
+                }
+            }
+
+            // ── Checksum straggler cleanup every N frames ──
+            // Evaluated frames are removed by ProcessChecksums immediately; this
+            // only sweeps frames that never completed (player dropped mid-report,
+            // late retransmit after evaluation) so the map stays bounded.
+            var desyncConfig = ServerConfiguration.Instance.DesyncDetection;
+            if (desyncConfig.EnableDesyncDetection &&
+                desyncConfig.ChecksumCleanupInterval > 0 &&
+                match.CurrentFrame % desyncConfig.ChecksumCleanupInterval == 0)
+            {
+                uint minKeepChecksum = match.CurrentFrame > desyncConfig.ChecksumRetentionFrames
+                    ? match.CurrentFrame - desyncConfig.ChecksumRetentionFrames
+                    : 0;
+
+                foreach (var kvp in match.FrameChecksums)
+                {
+                    if (kvp.Key < minKeepChecksum)
+                        match.FrameChecksums.TryRemove(kvp.Key, out _);
                 }
             }
         }

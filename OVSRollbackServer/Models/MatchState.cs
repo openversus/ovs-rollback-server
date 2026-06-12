@@ -63,6 +63,38 @@ namespace OVS.Rollback.Models
         // ── Desync detection: frame → (playerIndex → checksum) ──
         public ConcurrentDictionary<uint, ConcurrentDictionary<int, uint>> FrameChecksums { get; } = new();
 
+        // ── Highest frame where every active (non-spectator, non-bot, connected)
+        //    player agreed on the checksum. Echoed to clients as ChecksumAckFrame
+        //    so they can free rollback history older than this frame. ──
+        private uint _lastVerifiedFrame;
+        public uint LastVerifiedFrame => Volatile.Read(ref _lastVerifiedFrame);
+        public void TryAdvanceVerifiedFrame(uint frame)
+        {
+            uint current = Volatile.Read(ref _lastVerifiedFrame);
+            while (frame > current)
+            {
+                uint observed = Interlocked.CompareExchange(ref _lastVerifiedFrame, frame, current);
+                if (observed == current) break;
+                current = observed;
+            }
+        }
+
+        // ── Highest frame fully evaluated by checksum processing (verified or
+        //    desynced). Prevents re-buffering/re-evaluating completed frames and
+        //    anchors pruning even when desyncs stall LastVerifiedFrame. ──
+        private uint _lastHandledChecksumFrame;
+        public uint LastHandledChecksumFrame => Volatile.Read(ref _lastHandledChecksumFrame);
+        public void TryAdvanceHandledChecksumFrame(uint frame)
+        {
+            uint current = Volatile.Read(ref _lastHandledChecksumFrame);
+            while (frame > current)
+            {
+                uint observed = Interlocked.CompareExchange(ref _lastHandledChecksumFrame, frame, current);
+                if (observed == current) break;
+                current = observed;
+            }
+        }
+
         // ── Sequence & ping tracking ──
         public uint SequenceCounter { get; set; } = uint.MaxValue;
         public uint PingPhaseCount { get; set; }
@@ -70,6 +102,24 @@ namespace OVS.Rollback.Models
 
         // ── Ping phase timer (prevents GC) ──
         public System.Threading.Timer? PingPhaseTimer { get; set; }
+
+        // ── Ping phase idempotence: 0 = not started, 1 = started ──
+        private int _pingPhaseStarted;
+        /// <summary>
+        /// True the first time it is called; false on every subsequent call.
+        /// Ensures StartPingPhase runs exactly once per match even when multiple
+        /// connection packets arrive simultaneously.
+        /// </summary>
+        public bool TryStartPingPhase() => Interlocked.CompareExchange(ref _pingPhaseStarted, 1, 0) == 0;
+
+        // ── PlayersConfiguration broadcast idempotence: 0 = not sent, 1 = sent ──
+        private int _playersConfigurationBroadcast;
+        /// <summary>
+        /// True the first time it is called; false on every subsequent call.
+        /// Ensures PlayersConfiguration is broadcast exactly once per match.
+        /// </summary>
+        public bool TryBroadcastPlayersConfiguration() =>
+            Interlocked.CompareExchange(ref _playersConfigurationBroadcast, 1, 0) == 0;
 
         // ── Tick loop control ──
         private int _tickRunning;
