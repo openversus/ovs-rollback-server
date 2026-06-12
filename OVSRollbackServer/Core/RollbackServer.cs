@@ -501,7 +501,7 @@ namespace OVS.Rollback.Core
                     "Player data mismatch for PlayerIndex {PlayerIndex} in MatchId {MatchId}. " +
                     "Received PlayerIndex does not match any player in the match configuration. " +
                     "This may indicate a client error. MatchData is: {matchdata}",
-                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload));
+                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload, OVSJsonContext.Default.NewConnectionPayload));
                 _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
                         description: "DataError",
                         matchEvent: "DataError",

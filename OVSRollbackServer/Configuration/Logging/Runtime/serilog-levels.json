@@ -1,0 +1,6 @@
+{
+  "MinimumLevel": "Verbose",
+  "MicrosoftOverride": "Warning",
+  "ConsoleMinimumLevel": "Verbose",
+  "FileMinimumLevel": "Verbose"
+}

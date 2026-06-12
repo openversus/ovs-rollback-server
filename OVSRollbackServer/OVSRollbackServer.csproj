@@ -15,10 +15,24 @@
     <TieredPGO>true</TieredPGO>
     <!-- Required for SkipLocalsInit attribute (optional, used on hot serializer) -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Native AOT: compile to a self-contained native binary, no JIT.
+         Setting this in the project file (not just at publish) also enables the
+         trim/AOT compatibility analyzers on every build. -->
+    <PublishAot>true</PublishAot>
+    <!-- Favor throughput over binary size; this server is perf-critical and short-lived -->
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <!-- AOT trims EventSource/EventPipe support by default; keep it so the
+         dotnet-counters workflow and the OpenTelemetry meter keep working -->
+    <EventSourceSupport>true</EventSourceSupport>
   </PropertyGroup>
+  <ItemGroup Label="RuntimeHostConfigurationOptions">
+    <!-- Migrated from runtimeconfig.template.json, which PublishAot does not support -->
+    <RuntimeHostConfigurationOption Include="System.GC.LatencyLevel" Value="SustainedLowLatency" />
+    <RuntimeHostConfigurationOption Include="System.GC.DynamicAdaptationMode" Value="1" />
+    <RuntimeHostConfigurationOption Include="System.Threading.ThreadPool.MinThreads" Value="4" />
+  </ItemGroup>
   <ItemGroup Label="PackageReferences">
     <!-- OpenTelemetry for metrics export -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
@@ -39,7 +53,6 @@
     <PackageReference Include="Serilog.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="3.0.0" />
-    <PackageReference Include="Serilog.Settings.Configuration" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.Async" Version="2.1.0" />
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
@@ -51,7 +64,7 @@
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
-    <None Update="Configuration\Logging\Runtime\serilog-config.json">
+    <None Update="Configuration\Logging\Runtime\serilog-levels.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
   </ItemGroup>

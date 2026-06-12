@@ -14,39 +14,41 @@ namespace Serilog.Enrichers
         {
             string callerName = "Unknown";
 
-            StackFrame? firstUserFrame = new StackTrace(fNeedFileInfo: true)
-                .GetFrames()
-                .Where(f =>
-                {
-                    var method = f?.GetMethod();
-                    var declaringType = method?.DeclaringType;
-                    var fullName = declaringType?.FullName;
-                    return !string.IsNullOrEmpty(fullName) &&
-                           !fullName.Contains("System.") &&
-                           !fullName.Contains("Serilog.") &&
-                           !fullName.Contains("Microsoft.Extensions");
-                })
-                .FirstOrDefault();
-
-            if (firstUserFrame != null)
+            // DiagnosticMethodInfo instead of StackFrame.GetMethod(): the latter returns null
+            // under Native AOT because method reflection metadata is trimmed, while
+            // DiagnosticMethodInfo reads the stack-trace metadata AOT keeps for diagnostics.
+            DiagnosticMethodInfo? firstUserMethod = null;
+            foreach (StackFrame frame in new StackTrace(fNeedFileInfo: false).GetFrames())
             {
-                callerName = firstUserFrame.GetMethod()?.Name ?? "Unknown";
-
-                if (callerName == ".ctor")
+                DiagnosticMethodInfo? methodInfo = DiagnosticMethodInfo.Create(frame);
+                string? declaringTypeName = methodInfo?.DeclaringTypeName;
+                if (!string.IsNullOrEmpty(declaringTypeName) &&
+                    !declaringTypeName.Contains("System.") &&
+                    !declaringTypeName.Contains("Serilog.") &&
+                    !declaringTypeName.Contains("Microsoft.Extensions"))
                 {
-                    callerName = firstUserFrame.GetMethod()?.DeclaringType?.Name ?? "Unknown";
+                    firstUserMethod = methodInfo;
+                    break;
                 }
             }
 
-            //callerName = "[darkgoldenrod]" + callerName + "[/][fuchsia]()[/]";
+            if (null != firstUserMethod)
+            {
+                callerName = firstUserMethod.Name;
+
+                if (callerName == ".ctor")
+                {
+                    string declaringTypeName = firstUserMethod.DeclaringTypeName ?? "Unknown";
+                    int lastDotIndex = declaringTypeName.LastIndexOf('.');
+                    callerName = lastDotIndex >= 0 ? declaringTypeName[(lastDotIndex + 1)..] : declaringTypeName;
+                }
+            }
 
             _callerProperty = propertyFactory.CreateProperty(
                 CallerNamePropertyName,
                 callerName);
 
             logEvent.AddPropertyIfAbsent(_callerProperty);
-            ;
-            ;
         }
     }
 }

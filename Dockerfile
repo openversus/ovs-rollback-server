@@ -1,7 +1,8 @@
 # See https://aka.ms/customizecontainer to learn how to customize your debug container and how Visual Studio uses this Dockerfile to build your images for faster debugging.
 
-# This stage is used when running from VS in fast mode (Default for Debug configuration)
-FROM mcr.microsoft.com/dotnet/runtime:10.0 AS base
+# The Native AOT binary is self-contained, so the final image only needs runtime-deps
+# (native libraries), not the .NET runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS base
 USER $APP_UID
 WORKDIR /app
 
@@ -9,6 +10,10 @@ WORKDIR /app
 # This stage is used to build the service project
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
+# clang + zlib headers are required by the Native AOT compiler (ILC) to link the native binary
+RUN apt update -y \
+ && apt install clang zlib1g-dev -y \
+ && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY ["OVSRollbackServer/OVSRollbackServer.csproj", "OVSRollbackServer/"]
 RUN dotnet restore "./OVSRollbackServer/OVSRollbackServer.csproj"
@@ -20,7 +25,7 @@ RUN dotnet build "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/bu
 FROM build AS publish
 
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -r linux-x64 -o /app/publish
 
 USER root
 RUN apt update -y \
@@ -63,4 +68,4 @@ ENV OVS_SERVER=${OVS_SERVER}
 #ARG LOG_ARCHIVE_PATH=/tmp/rollback_logs
 #ENV Logging__LogArchivePath=${LOG_ARCHIVE_PATH}
 
-ENTRYPOINT ["dotnet", "OVS.Rollback.Server.dll"]
+ENTRYPOINT ["/app/OVS.Rollback.Server"]

@@ -5,7 +5,8 @@ using OVS.Rollback.Common;
 using System;
 using System.IO;
 using System.Reflection;
-using Newtonsoft.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OVS.Rollback.Configuration
 {
@@ -131,7 +132,7 @@ namespace OVS.Rollback.Configuration
                 {
                     var json = File.ReadAllText(_configPath);
 
-                    config = JsonConvert.DeserializeObject<ServerConfiguration>(json) ?? BootStrapEnvVariables();
+                    config = JsonSerializer.Deserialize(json, OVSJsonContext.Default.ServerConfiguration) ?? BootStrapEnvVariables();
 
                     _logger?.LogInformation("{LogPrefix} Loaded configuration from {ConfigPath}", LogPrefix, _configPath);
                 }

@@ -11,9 +11,12 @@ using OVS.Rollback.Utils;
 using Serilog;
 using Serilog.Context;
 using Serilog.Core;
+using Serilog.Events;
+using Serilog.Exceptions;
 using Serilog.Extensions.Logging;
+using Serilog.Templates;
+using Serilog.Templates.Themes;
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
 
@@ -202,9 +205,9 @@ namespace OVS.Rollback.Common
         /// configuration providers.</returns>
         private IHostBuilder BuildAppHost()
         {
-            string assmLocation = Assembly.GetExecutingAssembly().Location;
-            string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
-            string basePath = assmLocation.Replace(manifestName, "");
+            // AppContext.BaseDirectory instead of Assembly.Location: the latter returns an
+            // empty string in single-file/Native AOT deployments.
+            string basePath = AppContext.BaseDirectory;
 
             IHostBuilder hostBuilder = Host.CreateDefaultBuilder()
                 .ConfigureAppConfiguration(c =>
@@ -261,10 +264,11 @@ namespace OVS.Rollback.Common
         /// Initializes the program's root Serilog logger instance and configures global logging context properties.
         /// </summary>
         /// <remarks>This method is intended to be called automatically during module initialization and
-        /// should not be invoked directly. It sets up the root logger using configuration from a JSON file
-        /// and establishes global context properties for logging. This ensures that logging is available and properly
-        /// configured before any other code executes.
-        /// 
+        /// should not be invoked directly. Sinks, formatters, and enrichers are configured in code because
+        /// Serilog.Settings.Configuration resolves them by reflection over assembly-qualified type names,
+        /// which is incompatible with Native AOT trimming. Minimum levels remain externally tunable via
+        /// the flat serilog-levels.json file, read as plain values (AOT-safe).
+        ///
         /// This is the configured logger instance from which all other logger instances should derive, either directly
         /// or via the Microsoft.Extensions.Logging abstractions.
         /// </remarks>
@@ -274,31 +278,44 @@ namespace OVS.Rollback.Common
             // Force Utilities ModuleInitializer to run to ensure LogPath is set before logger configuration
             _ = Utilities.LogPath;
 
-            string assmLocation = Assembly.GetExecutingAssembly().Location;
-            string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
-            string basePath = assmLocation.Replace(manifestName, "");
-            ;
-            var rootLoggerConfig = new ConfigurationBuilder()
-                    .SetBasePath(basePath)
-                    .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
-                    .Build();
+            string levelsFilePath = Path.Combine(AppContext.BaseDirectory, "Configuration", "Logging", "Runtime", "serilog-levels.json");
+            IConfigurationRoot levelsConfig = new ConfigurationBuilder()
+                .AddJsonFile(levelsFilePath, optional: true, reloadOnChange: false)
+                .Build();
 
-            var logPathKey = rootLoggerConfig
-                    .AsEnumerable()
-                    .FirstOrDefault(kvp => kvp.Value == "__DO_NOT_EDIT_PLACEHOLDER_PATH__")
-                    .Key;
+            LogEventLevel minimumLevel = ParseLogLevel(levelsConfig["MinimumLevel"], LogEventLevel.Verbose);
+            LogEventLevel microsoftOverride = ParseLogLevel(levelsConfig["MicrosoftOverride"], LogEventLevel.Warning);
+            LogEventLevel consoleMinimumLevel = ParseLogLevel(levelsConfig["ConsoleMinimumLevel"], LogEventLevel.Verbose);
+            LogEventLevel fileMinimumLevel = ParseLogLevel(levelsConfig["FileMinimumLevel"], LogEventLevel.Verbose);
 
-            if (!logPathKey.StringIsNullOrWhiteSpace)
-            {
-                rootLoggerConfig = new ConfigurationBuilder()
-                    .SetBasePath(basePath)
-                    .AddJsonFile(basePath / "Configuration" / "Logging" / "Runtime" / "serilog-config.json")
-                    .AddInMemoryCollection(new Dictionary<string, string?> { [logPathKey] = Utilities.LogPath })
-                    .Build();
-            }
+            ExpressionTemplate consoleTemplate = new(
+                "[{@t:yyyy-MM-ddTHH:mm:ss}][{@l:u3}] {Substring(SourceContext, LastIndexOf(SourceContext, '.') + 1)}(): {@m} \n{@x}",
+                theme: CustomThemes.Sixteenish);
+
+            ExpressionTemplate fileTemplate = new(
+                "[{@t:yyyy-MM-dd HH:mm:ss.fff zzz}][{@l:u3}] {SourceContext}(): {@m:lj} \n{@x}");
 
             Log.Logger = _rootLogger = Singletons._rootLogger = new LoggerConfiguration()
-                .ReadFrom.Configuration(rootLoggerConfig)
+                .MinimumLevel.Is(minimumLevel)
+                .MinimumLevel.Override("Microsoft", microsoftOverride)
+                .Enrich.WithCallerNameEnricher()
+                .Enrich.FromLogContext()
+                .Enrich.WithThreadId()
+                .Enrich.WithThreadName()
+                .Enrich.WithExceptionDetails()
+                .WriteTo.Console(consoleTemplate, restrictedToMinimumLevel: consoleMinimumLevel)
+                .WriteTo.Async(sink => sink.File(
+                    formatter: fileTemplate,
+                    path: Utilities.LogPath,
+                    restrictedToMinimumLevel: fileMinimumLevel,
+                    fileSizeLimitBytes: 10485760,
+                    buffered: true,
+                    shared: false,
+                    flushToDiskInterval: TimeSpan.FromSeconds(1),
+                    rollingInterval: RollingInterval.Infinite,
+                    rollOnFileSizeLimit: true,
+                    retainedFileCountLimit: null,
+                    encoding: Encoding.UTF8))
                 .CreateLogger();
 
             Dictionary<string, bool> globalContextItems = new Dictionary<string, bool>()
@@ -307,6 +324,15 @@ namespace OVS.Rollback.Common
             };
 
             //GlobalLogContext.PushProperty("Bools", globalContextItems);
+        }
+
+        /// <summary>
+        /// Parses a Serilog level name from configuration, falling back to the supplied default when
+        /// the value is missing or invalid.
+        /// </summary>
+        private static LogEventLevel ParseLogLevel(string? configuredLevel, LogEventLevel defaultLevel)
+        {
+            return Enum.TryParse(configuredLevel, ignoreCase: true, out LogEventLevel parsedLevel) ? parsedLevel : defaultLevel;
         }
 
         /// <summary>
