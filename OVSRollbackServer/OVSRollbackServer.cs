@@ -34,19 +34,23 @@ namespace OVS.Rollback
 
         public static async Task<int> Main(string[] args)
         {
+            logger.LogInformation("{LogPrefix} OVS Rollback Server version: {Version}", LogPrefix, Statics.OVSRollbackVersion);
             RunTimer.Start();
 
             // ═══════════════════════════════════════════
             //  Initialize Configuration
             // ═══════════════════════════════════════════
 
-            logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+            }
 
             if (Statics.PreLoggerMessages.Count > 0)
             {
                 foreach (string message in Statics.PreLoggerMessages)
                 {
-                    logger.LogInformation($"{LogPrefix} PreLogger message: {message}");
+                    logger.LogInformation("{LogPrefix} PreLogger message: {message}", LogPrefix, message);
                 }
                 Statics.PreLoggerMessages.Clear();
             }
