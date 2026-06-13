@@ -1,4 +1,5 @@
 // Payloads.cs
+using OVS.Rollback.Common;
 using OVS.Rollback.Interfaces;
 using OVS.Rollback.Models;
 using System;
@@ -130,18 +131,7 @@ namespace OVS.Rollback.Models
 
         public string ToJson()
         {
-            JsonSerializerOptions options = new() {
-                WriteIndented = true,
-                IncludeFields = true,
-                IndentSize = 4,
-                MaxDepth = 10,
-                NewLine = "\n",
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                PropertyNameCaseInsensitive = true,
-                NumberHandling = JsonNumberHandling.AllowReadingFromString
-            };
-
-            return Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(this, options));
+            return Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(this, SnakeCaseJsonContext.Default.MatchStatus));
         }
     }
 

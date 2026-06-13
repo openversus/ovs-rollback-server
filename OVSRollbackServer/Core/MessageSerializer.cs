@@ -344,7 +344,7 @@ namespace OVS
             }
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        //[MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static int SerializePlayerInputTo(
             ServerHeader header,
             PlayerInputPayload payload,

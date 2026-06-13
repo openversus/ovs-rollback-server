@@ -501,7 +501,7 @@ namespace OVS.Rollback.Core
                     "Player data mismatch for PlayerIndex {PlayerIndex} in MatchId {MatchId}. " +
                     "Received PlayerIndex does not match any player in the match configuration. " +
                     "This may indicate a client error. MatchData is: {matchdata}",
-                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload));
+                    payloadIndex, matchData.MatchId, JsonSerializer.Serialize(payload, OVSJsonContext.Default.NewConnectionPayload));
                 _ = Events.SendErrorEvent(this, StatusEventArgs.CreateNew(
                         description: "DataError",
                         matchEvent: "DataError",
@@ -1116,7 +1116,7 @@ namespace OVS.Rollback.Core
             return FallbackOffset + player.SmoothedPing + MathF.Abs(player.SmoothRift) * TargetFrameTime;
         }
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        //[MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame)
         {
             var config = ServerConfiguration.Instance;
@@ -1476,7 +1476,7 @@ namespace OVS.Rollback.Core
         //  Tick Processing (sync, zero-alloc hot path)
         // ═══════════════════════════════════════════
 
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        //[MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void Tick(MatchState match)
         {
             var ws = match.Workspace!;
@@ -1731,7 +1731,7 @@ namespace OVS.Rollback.Core
         /// Hot-path send: serialize into workspace buffer → compress into workspace
         /// buffer → synchronous SendTo. ZERO heap allocation for data buffers.
         /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        //[MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void SendPlayerInput(MatchState match, PlayerInfo player, TickWorkspace ws, uint sequence)
         {
             var config = ServerConfiguration.Instance;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OVS.Rollback.Common;
 using OVS.Rollback.Interfaces;
 
 namespace OVS.Rollback.Models
@@ -88,18 +89,7 @@ namespace OVS.Rollback.Models
 
         public string ToJSON()
         {
-            JsonSerializerOptions options = new() {
-                WriteIndented = true,
-                IncludeFields = true,
-                IndentSize = 4,
-                MaxDepth = 10,
-                NewLine = "\n",
-                PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-                PropertyNameCaseInsensitive = true,
-                NumberHandling = JsonNumberHandling.AllowReadingFromString
-            };
-
-            return Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(this, options));
+            return Encoding.UTF8.GetString(JsonSerializer.SerializeToUtf8Bytes(this, SnakeCaseJsonContext.Default.TimeObject));
         }
 
         new public string ToString()

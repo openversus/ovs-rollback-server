@@ -20,7 +20,7 @@ RUN dotnet build "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/bu
 FROM build AS publish
 
 ARG BUILD_CONFIGURATION=Release
-RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
+RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -r linux-x64 --self-contained true -o /app/publish
 
 USER root
 RUN apt update -y \
@@ -48,6 +48,11 @@ COPY ./OVSRollbackServer/appsettings.json /app/appsettings.json
 
 ARG OVS_SERVER=https://prod.openversus.org/
 ENV OVS_SERVER=${OVS_SERVER}
+ENV DOTNET_TieredCompilation=1
+ENV DOTNET_TieredPGO=1
+# NOTE: DOTNET_* numeric values are parsed as HEX: 10 == 16 decimal (default is 30 decimal)
+ENV DOTNET_TC_CallCountThreshold=10
+ENV DOTNET_ReadyToRun=1
 
 # If desired, set the value of MATCH_UPDATE_KEY below as a default to be overridden by the value in appsettings.json
 #ARG MATCH_UPDATE_KEY=DockerMisconfiguredMatchUpdateKey
@@ -63,4 +68,4 @@ ENV OVS_SERVER=${OVS_SERVER}
 #ARG LOG_ARCHIVE_PATH=/tmp/rollback_logs
 #ENV Logging__LogArchivePath=${LOG_ARCHIVE_PATH}
 
-ENTRYPOINT ["dotnet", "OVS.Rollback.Server.dll"]
+ENTRYPOINT ["./OVS.Rollback.Server"]

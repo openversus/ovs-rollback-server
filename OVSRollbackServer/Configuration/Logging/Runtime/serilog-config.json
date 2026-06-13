@@ -1,8 +1,5 @@
 {
   "Serilog": {
-    "LevelSwitches": {
-      "controlSwitch": "Verbose"
-    },
     "Using": [
       "Serilog.Expressions",
       "Serilog.Sinks.Console",
@@ -32,10 +29,9 @@
           "formatter": {
             "type": "Serilog.Templates.ExpressionTemplate, Serilog.Expressions",
             "template": "[{@t:yyyy-MM-ddTHH:mm:ss}][{@l:u3}] {Substring(SourceContext, LastIndexOf(SourceContext, '.') + 1)}(): {@m} \n{@x}",
-            "theme": "Serilog.Templates.Themes.CustomThemes::Sixteenish, OVS.Rollback.Server",
-            "controlLevelSwitch": "$controlSwitch",
-            "restrictedToMinimumLevel": "Information"
-          }
+            "theme": "Serilog.Templates.Themes.CustomThemes::Sixteenish, OVS.Rollback.Server"
+          },
+          "restrictedToMinimumLevel": "Verbose"
         }
       },
       {
@@ -47,9 +43,7 @@
               "Args": {
                 "formatter": {
                   "type": "Serilog.Templates.ExpressionTemplate, Serilog.Expressions",
-                  "template": "[{@t:yyyy-MM-dd HH:mm:ss.fff zzz}][{@l:u3}] {SourceContext}(): {@m:lj} \n{@x}",
-                  "controlLevelSwitch": "$controlSwitch",
-                  "restrictedToMinimumLevel": "Information"
+                  "template": "[{@t:yyyy-MM-dd HH:mm:ss.fff zzz}][{@l:u3}] {SourceContext}(): {@m:lj} \n{@x}"
                 },
                 "path": "__DO_NOT_EDIT_PLACEHOLDER_PATH__",
                 "restrictedToMinimumLevel": "Verbose",
@@ -59,7 +53,6 @@
                 "retainedFileCountLimit": null,
                 "buffered": true,
                 "flushToDiskInterval": "00:00:01",
-                "controlLevelSwitch": "$controlSwitch",
                 "shared": false,
                 "encoding": "System.Text.Encoding::UTF8"
               }
