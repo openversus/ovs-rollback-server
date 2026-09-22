@@ -233,7 +233,15 @@ namespace OVS.Rollback.Common
                 });
             
             Microsoft.Extensions.Logging.ILogger<ServerConfiguration> configLogger = new SerilogLoggerFactory().CreateLogger<ServerConfiguration>();
-            ServerConfiguration config = new ServerConfiguration(configLogger);
+            // Load into the shared static instance and use that same object everywhere. Constructing a
+            // ServerConfiguration directly loads into ServerConfiguration.Instance but leaves the new object
+            // at class defaults, which silently ignored appsettings.json for everything read through DI.
+            ServerConfiguration.Initialize(configLogger, Singletons.ConfigPath);
+            ServerConfiguration config = ServerConfiguration.Instance;
+            if (config.Logging.LogArchivePath.NotNullOrWhiteSpace)
+            {
+                Statics.LogArchivePath = Statics.FinalLogPath = config.Logging.LogArchivePath;
+            }
             if (config.Server.MatchUpdateKey.StringIsNullOrWhiteSpace || config.Server.MatchUpdateKey == "DIMisconfiguredMatchUpdateKey" || config.Server.MatchUpdateKey == "MisconfiguredMatchUpdateKey")
             {
                 Statics.PreLoggerMessages.Add($"{LogPrefix} Server__MatchUpdateKey is not set or is using the default placeholder value. Using default: {Statics.PrematchMatchUpdateKey}");
@@ -351,6 +359,7 @@ namespace OVS.Rollback.Common
                 if (ushort.TryParse(cmdLineArgsList[1], out var p))
                 {
                     Singletons.Port = p;
+                    Singletons.PortSetOnCommandLine = true;
                     RootLoggerInstance?.Information("{LogPrefix} Port overridden by command line: {Port}", LogPrefix, Singletons.Port);
                 }
                 else
@@ -364,6 +373,7 @@ namespace OVS.Rollback.Common
                 if (int.TryParse(cmdLineArgsList[2], out var mp) && mp is > 0 and <= 8)
                 {
                     Singletons.MaxPlayers = mp;
+                    Singletons.MaxPlayersSetOnCommandLine = true;
                     RootLoggerInstance?.Information("{LogPrefix} MaxPlayers overridden by command line: {MaxPlayers}", LogPrefix, Singletons.MaxPlayers);
                 }
                 else

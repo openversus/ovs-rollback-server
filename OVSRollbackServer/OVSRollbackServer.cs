@@ -68,13 +68,13 @@ namespace OVS.Rollback
             ushort port = Config.Server.Port;
             int maxPlayers = Config.Server.MaxPlayers;
 
-            // cmdline options should take priority
-            if (port != Singletons.Port)
+            // cmdline options should take priority, but only when they were actually given
+            if (Singletons.PortSetOnCommandLine)
             {
                 port = Singletons.Port;
             }
 
-            if (maxPlayers != Singletons.MaxPlayers)
+            if (Singletons.MaxPlayersSetOnCommandLine)
             {
                 maxPlayers = Singletons.MaxPlayers;
             }
