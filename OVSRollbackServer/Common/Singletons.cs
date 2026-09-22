@@ -59,7 +59,8 @@ namespace OVS.Rollback.Common
             get => _rootLogger!;
         }
 
-        public static ServerConfiguration Config;
+        // Always the live, loaded configuration (JSON + env overrides, replaced on SIGHUP reload).
+        public static ServerConfiguration Config => ServerConfiguration.Instance;
 
         public static HTTPHelper SharedHTTPHelper;
         public static HttpClient SharedHTTPClient;
@@ -70,6 +71,8 @@ namespace OVS.Rollback.Common
 
         public static ushort Port { get; set; } = 41234;
         public static int MaxPlayers { get; set; } = 8;
+        public static bool PortSetOnCommandLine { get; set; } = false;
+        public static bool MaxPlayersSetOnCommandLine { get; set; } = false;
         public static string ConfigPath { get; set; } = String.Empty;
         public static MeterProvider? MetricsProvider { get; set; } = null;
         public static string MetricsString { get; set; } = String.Empty;
@@ -85,7 +88,6 @@ namespace OVS.Rollback.Common
         public static void Initialize()
         {
             RollbackDIContainer ??= new DIContainer();
-            Config = RollbackDIContainer.GenericHost.Services.GetRequiredService<ServerConfiguration>();
             SharedLoggerFactory = RollbackDIContainer.GenericHost.Services.GetRequiredService<ILoggerFactory>();
             SharedHTTPClient = RollbackDIContainer.GenericHost.Services.GetRequiredService<HttpClient>();
             SharedHTTPHelper = RollbackDIContainer.GenericHost.Services.GetRequiredService<HTTPHelper>();
