@@ -78,7 +78,7 @@ namespace OVS.Rollback.Core
 
             if (BaseUrl.StringIsNullOrEmpty)
             {
-                string errorMsg = "No base URL configured. Please set the OVS_SERVER environment variable.";
+                string errorMsg = "No base URL configured. Set Server__BaseUrl or OVS_SERVER in the environment, or Server.BaseUrl in the config file.";
                 _ = Events.SendTerminatingErrorEvent(this, StatusEventArgs.CreateNew(
                         description: "ConfigurationError",
                         matchEvent: "TerminatingError",

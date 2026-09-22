@@ -195,9 +195,7 @@ namespace OVS.Rollback.Configuration
             // Server settings
             serverSettings.Port = GetEnvUShort("Server__Port", serverSettings.Port);
             serverSettings.MaxPlayers = GetEnvInt("Server__MaxPlayers", serverSettings.MaxPlayers);
-            serverSettings.BaseUrl = GetEnvString("Server__BaseUrl", serverSettings.BaseUrl) ??
-                            GetEnvString("OVS_SERVER", serverSettings.BaseUrl) ??
-                            GetEnvString("mvsi_server", serverSettings.BaseUrl) ?? "";
+            serverSettings.BaseUrl = GetFirstEnvString(BaseUrlEnvKeys) ?? serverSettings.BaseUrl ?? "";
             serverSettings.HostName = GetEnvString("Server__HostName", serverSettings.HostName) ?? "";
             serverSettings.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", serverSettings.FireMatchEvents);
             serverSettings.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", serverSettings.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
@@ -284,9 +282,7 @@ namespace OVS.Rollback.Configuration
             // Server settings
             Server.Port = GetEnvUShort("Server__Port", Server.Port);
             Server.MaxPlayers = GetEnvInt("Server__MaxPlayers", Server.MaxPlayers);
-            Server.BaseUrl = GetEnvString("Server__BaseUrl", Server.BaseUrl) ?? 
-                            GetEnvString("OVS_SERVER", Server.BaseUrl) ?? 
-                            GetEnvString("mvsi_server", Server.BaseUrl) ?? "";
+            Server.BaseUrl = GetFirstEnvString(BaseUrlEnvKeys) ?? Server.BaseUrl ?? "";
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
             Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
             Server.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", Server.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
@@ -354,9 +350,28 @@ namespace OVS.Rollback.Configuration
             _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
 
+        // Env vars that set the matchmaker base URL, highest priority first. OVS_SERVER and
+        // mvsi_server are the legacy names; mvsi_server also selects the MVSI endpoints.
+        internal static readonly string[] BaseUrlEnvKeys = ["Server__BaseUrl", "OVS_SERVER", "mvsi_server"];
+
         // Helper methods for environment variable parsing
         protected internal static string? GetEnvString(string key, string? defaultValue)
             => Environment.GetEnvironmentVariable(key) ?? defaultValue;
+
+        /// <summary>
+        /// Returns the first of <paramref name="keys"/> whose environment variable is set to a
+        /// non-blank value, or null. Unlike chaining GetEnvString with ??, a set-but-empty
+        /// variable or a config default of "" does not stop the search.
+        /// </summary>
+        protected internal static string? GetFirstEnvString(params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                var value = Environment.GetEnvironmentVariable(key);
+                if (!string.IsNullOrWhiteSpace(value)) return value;
+            }
+            return null;
+        }
 
         protected internal static int GetEnvInt(string key, int defaultValue)
             => int.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
