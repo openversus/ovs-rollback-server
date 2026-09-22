@@ -426,3 +426,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local two-client desync harness (not for commit until reviewed)
+harness/
