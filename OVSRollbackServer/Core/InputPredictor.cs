@@ -36,8 +36,9 @@ namespace OVS.Rollback.Core
         /// <returns>Predicted input value for the current frame.</returns>
         public static uint Predict(uint lastInput, uint framesMissed)
         {
-            // Short grace period: repeat verbatim for 2 frames
-            if (framesMissed < GracePeriodFrames)
+            // Short grace period: repeat verbatim for GracePeriodFrames frames. framesMissed
+            // is 1-based, so '<' repeated only one frame.
+            if (framesMissed <= GracePeriodFrames)
                 return lastInput;
 
             // After grace period: go neutral immediately

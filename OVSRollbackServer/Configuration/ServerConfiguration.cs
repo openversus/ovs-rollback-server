@@ -225,6 +225,7 @@ namespace OVS.Rollback.Configuration
             gameLogicSettings.InputHistoryFrames = GetEnvUInt("GameLogic__InputHistoryFrames", gameLogicSettings.InputHistoryFrames);
             gameLogicSettings.InputCleanupInterval = GetEnvUInt("GameLogic__InputCleanupInterval", gameLogicSettings.InputCleanupInterval);
             gameLogicSettings.MinimumInputFrames = GetEnvInt("GameLogic__MinimumInputFrames", gameLogicSettings.MinimumInputFrames);
+            gameLogicSettings.MissToleranceFrames = GetEnvUInt("GameLogic__MissToleranceFrames", gameLogicSettings.MissToleranceFrames);
 
             // Rift calculation settings
             riftCalculationSettings.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", riftCalculationSettings.PingAlpha);
@@ -314,6 +315,7 @@ namespace OVS.Rollback.Configuration
             GameLogic.InputHistoryFrames = GetEnvUInt("GameLogic__InputHistoryFrames", GameLogic.InputHistoryFrames);
             GameLogic.InputCleanupInterval = GetEnvUInt("GameLogic__InputCleanupInterval", GameLogic.InputCleanupInterval);
             GameLogic.MinimumInputFrames = GetEnvInt("GameLogic__MinimumInputFrames", GameLogic.MinimumInputFrames);
+            GameLogic.MissToleranceFrames = GetEnvUInt("GameLogic__MissToleranceFrames", GameLogic.MissToleranceFrames);
 
             // Rift calculation settings
             RiftCalculation.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", RiftCalculation.PingAlpha);
@@ -422,6 +424,8 @@ namespace OVS.Rollback.Configuration
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
         public int MinimumInputFrames { get; set; } = 5;
+        /// <summary>Ticks to resend a peer's last acked input before predicting its next frames.</summary>
+        public uint MissToleranceFrames { get; set; } = 10;
     }
 
     public class RiftCalculationSettings

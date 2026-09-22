@@ -1609,7 +1609,7 @@ namespace OVS.Rollback.Core
                         }
                         recipient.MissedInputs[(uint)idx] = 0;
                     }
-                    else if (missedCount < 10)
+                    else if (missedCount < gameConfig.MissToleranceFrames)
                     {
                         ws.Payload.StartFrame[idx] = lastAck;
                         recipient.MissedInputs[(uint)idx] = missedCount + 1;
