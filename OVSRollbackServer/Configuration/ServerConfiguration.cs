@@ -5,7 +5,8 @@ using OVS.Rollback.Common;
 using System;
 using System.IO;
 using System.Reflection;
-using Newtonsoft.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OVS.Rollback.Configuration
 {
@@ -131,7 +132,7 @@ namespace OVS.Rollback.Configuration
                 {
                     var json = File.ReadAllText(_configPath);
 
-                    config = JsonConvert.DeserializeObject<ServerConfiguration>(json) ?? BootStrapEnvVariables();
+                    config = JsonSerializer.Deserialize(json, OVSJsonContext.Default.ServerConfiguration) ?? BootStrapEnvVariables();
 
                     _logger?.LogInformation("{LogPrefix} Loaded configuration from {ConfigPath}", LogPrefix, _configPath);
                 }
@@ -194,9 +195,7 @@ namespace OVS.Rollback.Configuration
             // Server settings
             serverSettings.Port = GetEnvUShort("Server__Port", serverSettings.Port);
             serverSettings.MaxPlayers = GetEnvInt("Server__MaxPlayers", serverSettings.MaxPlayers);
-            serverSettings.BaseUrl = GetEnvString("Server__BaseUrl", serverSettings.BaseUrl) ??
-                            GetEnvString("OVS_SERVER", serverSettings.BaseUrl) ??
-                            GetEnvString("mvsi_server", serverSettings.BaseUrl) ?? "";
+            serverSettings.BaseUrl = GetFirstEnvString(BaseUrlEnvKeys) ?? serverSettings.BaseUrl ?? "";
             serverSettings.HostName = GetEnvString("Server__HostName", serverSettings.HostName) ?? "";
             serverSettings.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", serverSettings.FireMatchEvents);
             serverSettings.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", serverSettings.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
@@ -208,7 +207,8 @@ namespace OVS.Rollback.Configuration
             performanceSettings.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", performanceSettings.UseAdaptiveSpinThreshold);
             performanceSettings.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", performanceSettings.MetricsSamplingInterval);
             performanceSettings.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", performanceSettings.TargetFrameRate);
-            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", performanceSettings.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
+            // Env var is in MB; default 1024 MB (1 GB) to avoid accidentally OOMing machines with low RAM if GC is too aggressive. Adjust as needed for your server's RAM.
+            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
 
             // Networking settings
             networkingSettings.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", networkingSettings.ReceiveBufferSize);
@@ -223,6 +223,7 @@ namespace OVS.Rollback.Configuration
             gameLogicSettings.InputHistoryFrames = GetEnvUInt("GameLogic__InputHistoryFrames", gameLogicSettings.InputHistoryFrames);
             gameLogicSettings.InputCleanupInterval = GetEnvUInt("GameLogic__InputCleanupInterval", gameLogicSettings.InputCleanupInterval);
             gameLogicSettings.MinimumInputFrames = GetEnvInt("GameLogic__MinimumInputFrames", gameLogicSettings.MinimumInputFrames);
+            gameLogicSettings.MissToleranceFrames = GetEnvUInt("GameLogic__MissToleranceFrames", gameLogicSettings.MissToleranceFrames);
 
             // Rift calculation settings
             riftCalculationSettings.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", riftCalculationSettings.PingAlpha);
@@ -245,6 +246,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             desyncDetectionSettings.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", desyncDetectionSettings.EnableDesyncDetection);
+            desyncDetectionSettings.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", desyncDetectionSettings.KickDesyncingPlayer);
             desyncDetectionSettings.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", desyncDetectionSettings.ChecksumRetentionFrames);
             desyncDetectionSettings.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", desyncDetectionSettings.ChecksumCleanupInterval);
             desyncDetectionSettings.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", desyncDetectionSettings.MaxDesyncCount);
@@ -281,9 +283,7 @@ namespace OVS.Rollback.Configuration
             // Server settings
             Server.Port = GetEnvUShort("Server__Port", Server.Port);
             Server.MaxPlayers = GetEnvInt("Server__MaxPlayers", Server.MaxPlayers);
-            Server.BaseUrl = GetEnvString("Server__BaseUrl", Server.BaseUrl) ?? 
-                            GetEnvString("OVS_SERVER", Server.BaseUrl) ?? 
-                            GetEnvString("mvsi_server", Server.BaseUrl) ?? "";
+            Server.BaseUrl = GetFirstEnvString(BaseUrlEnvKeys) ?? Server.BaseUrl ?? "";
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
             Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
             Server.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", Server.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
@@ -295,7 +295,8 @@ namespace OVS.Rollback.Configuration
             Performance.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", Performance.UseAdaptiveSpinThreshold);
             Performance.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", Performance.MetricsSamplingInterval);
             Performance.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", Performance.TargetFrameRate);
-            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", Performance.GarbageCollectionFreeRAMThreshold) * 1024 * 1024;
+            // Env var is in MB; default 1024 MB (see note above).
+            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
 
             // Networking settings
             Networking.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", Networking.ReceiveBufferSize);
@@ -310,6 +311,7 @@ namespace OVS.Rollback.Configuration
             GameLogic.InputHistoryFrames = GetEnvUInt("GameLogic__InputHistoryFrames", GameLogic.InputHistoryFrames);
             GameLogic.InputCleanupInterval = GetEnvUInt("GameLogic__InputCleanupInterval", GameLogic.InputCleanupInterval);
             GameLogic.MinimumInputFrames = GetEnvInt("GameLogic__MinimumInputFrames", GameLogic.MinimumInputFrames);
+            GameLogic.MissToleranceFrames = GetEnvUInt("GameLogic__MissToleranceFrames", GameLogic.MissToleranceFrames);
 
             // Rift calculation settings
             RiftCalculation.PingAlpha = GetEnvFloat("RiftCalculation__PingAlpha", RiftCalculation.PingAlpha);
@@ -332,6 +334,7 @@ namespace OVS.Rollback.Configuration
 
             // Desync detection settings
             DesyncDetection.EnableDesyncDetection = GetEnvBool("DesyncDetection__EnableDesyncDetection", DesyncDetection.EnableDesyncDetection);
+            DesyncDetection.KickDesyncingPlayer = GetEnvBool("DesyncDetection__KickDesyncingPlayer", DesyncDetection.KickDesyncingPlayer);
             DesyncDetection.ChecksumRetentionFrames = GetEnvUInt("DesyncDetection__ChecksumRetentionFrames", DesyncDetection.ChecksumRetentionFrames);
             DesyncDetection.ChecksumCleanupInterval = GetEnvUInt("DesyncDetection__ChecksumCleanupInterval", DesyncDetection.ChecksumCleanupInterval);
             DesyncDetection.MaxDesyncCount = GetEnvInt("DesyncDetection__MaxDesyncCount", DesyncDetection.MaxDesyncCount);
@@ -349,9 +352,28 @@ namespace OVS.Rollback.Configuration
             _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
 
+        // Env vars that set the matchmaker base URL, highest priority first. OVS_SERVER and
+        // mvsi_server are the legacy names; mvsi_server also selects the MVSI endpoints.
+        internal static readonly string[] BaseUrlEnvKeys = ["Server__BaseUrl", "OVS_SERVER", "mvsi_server"];
+
         // Helper methods for environment variable parsing
         protected internal static string? GetEnvString(string key, string? defaultValue)
             => Environment.GetEnvironmentVariable(key) ?? defaultValue;
+
+        /// <summary>
+        /// Returns the first of <paramref name="keys"/> whose environment variable is set to a
+        /// non-blank value, or null. Unlike chaining GetEnvString with ??, a set-but-empty
+        /// variable or a config default of "" does not stop the search.
+        /// </summary>
+        protected internal static string? GetFirstEnvString(params string[] keys)
+        {
+            foreach (var key in keys)
+            {
+                var value = Environment.GetEnvironmentVariable(key);
+                if (!string.IsNullOrWhiteSpace(value)) return value;
+            }
+            return null;
+        }
 
         protected internal static int GetEnvInt(string key, int defaultValue)
             => int.TryParse(Environment.GetEnvironmentVariable(key), out var val) ? val : defaultValue;
@@ -417,6 +439,8 @@ namespace OVS.Rollback.Configuration
         public uint InputHistoryFrames { get; set; } = 150;
         public uint InputCleanupInterval { get; set; } = 200;
         public int MinimumInputFrames { get; set; } = 5;
+        /// <summary>Ticks to resend a peer's last acked input before predicting its next frames.</summary>
+        public uint MissToleranceFrames { get; set; } = 10;
     }
 
     public class RiftCalculationSettings
@@ -447,6 +471,12 @@ namespace OVS.Rollback.Configuration
     public class DesyncDetectionSettings
     {
         public bool EnableDesyncDetection { get; set; } = true;
+        /// <summary>
+        /// When true, a player exceeding MaxDesyncCount is sent a Kick message and
+        /// marked disconnected. When false (default), the kick is only logged —
+        /// log-only mode for validating detection before enforcement.
+        /// </summary>
+        public bool KickDesyncingPlayer { get; set; } = false;
         public uint ChecksumRetentionFrames { get; set; } = 300;
         public uint ChecksumCleanupInterval { get; set; } = 200;
         public int MaxDesyncCount { get; set; } = 10;

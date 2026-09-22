@@ -308,6 +308,7 @@ dotnet OVSRollbackServer.dll
 | `InputHistoryFrames` | uint | 150 | Frames of input history to retain |
 | `InputCleanupInterval` | uint | 200 | Clean old inputs every N frames |
 | `MinimumInputFrames` | int | 10 | Minimum inputs before starting tick |
+| `MissToleranceFrames` | uint | 10 | Ticks to resend a peer's last acked input before predicting |
 
 ### Rift Calculation Settings
 | Setting | Type | Default | Description |

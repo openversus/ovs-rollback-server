@@ -15,10 +15,13 @@
     <TieredPGO>true</TieredPGO>
     <!-- Required for SkipLocalsInit attribute (optional, used on hot serializer) -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- R2R -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishReadyToRunComposite>true</PublishReadyToRunComposite>
+    <PublishReadyToRunCrossgen2ExtraArgs>--instruction-set:x86-64-v4</PublishReadyToRunCrossgen2ExtraArgs>
   </PropertyGroup>
   <ItemGroup Label="PackageReferences">
     <!-- OpenTelemetry for metrics export -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />

@@ -107,15 +107,25 @@ namespace OVS.Rollback
         }
         public static string GetBaseUrlFromEnv(ILogger _logger)
         {
-            var url = Environment.GetEnvironmentVariable("OVS_SERVER") ?? string.Empty;
+            // Precedence: env (Server__BaseUrl, then legacy OVS_SERVER / mvsi_server), then the
+            // config file's Server.BaseUrl. There is no command-line option or built-in default.
+            var url = ServerConfiguration.GetFirstEnvString("Server__BaseUrl", "OVS_SERVER") ?? string.Empty;
             _isOVS = url.NotNullOrWhiteSpace;
+            _isMVSI = false;
 
             if (url.StringIsNullOrWhiteSpace)
             {
-                _isOVS = false;
                 Log.OVSNotSet(_logger);
-                url = Environment.GetEnvironmentVariable("mvsi_server") ?? string.Empty;
+                url = ServerConfiguration.GetFirstEnvString("mvsi_server") ?? string.Empty;
                 _isMVSI = url.NotNullOrWhiteSpace;
+            }
+
+            if (url.StringIsNullOrWhiteSpace)
+            {
+                // Env overrides are already applied to Instance, so with no env value set this is
+                // the config file's Server.BaseUrl. A config-file URL uses the OVS endpoints.
+                url = ServerConfiguration.Instance.Server.BaseUrl ?? string.Empty;
+                _isOVS = url.NotNullOrWhiteSpace;
             }
 
             if (url.NotNullOrWhiteSpace && url.EndsWith('/'))
@@ -130,7 +140,7 @@ namespace OVS.Rollback
                 // and walk into traffic
 
                 Log.NoServerConfigured(_logger);
-                SignalSender.MementoMori("Neither OVS_SERVER nor mvsi_server set");
+                SignalSender.MementoMori("No base URL: none of Server__BaseUrl, OVS_SERVER, mvsi_server or Server.BaseUrl in the config file is set");
             }
 
             return url;

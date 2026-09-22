@@ -48,12 +48,34 @@ namespace OVS.Rollback.Models
         public ConcurrentDictionary<uint, uint> MissedInputs { get; } = new();
         public ConcurrentDictionary<uint, long> PendingPings { get; } = new();
 
-        // ── Future: Desync detection (not yet implemented) ──
-        #pragma warning disable CS0649 // Field is never assigned to
-        public ConcurrentDictionary<uint, uint> Checksums { get; } = new();
+        // ── Desync detection ──
         public int DesyncCount { get; set; }
         public uint FirstDesyncFrame { get; set; }
-        #pragma warning restore CS0649
+
+        // ── Connection stability (Welford online variance) ──
+        // Updated each time CalcRiftVariableTick commits a ping/rift sample.
+        // Maintains a running mean and sum of squared deviations with no stored
+        // history. Variance = M2 / count; lower = more stable connection.
+        // Only written while player.Lock is held, so no extra synchronisation.
+        public long   PingVarianceSampleCount { get; set; }
+        public double PingVarianceMean        { get; set; }
+        public double PingVarianceM2          { get; set; }
+
+        public long   RiftVarianceSampleCount { get; set; }
+        public double RiftVarianceMean        { get; set; }
+        public double RiftVarianceM2          { get; set; }
+
+        // Minimum samples before variance is a reliable tiebreaker; below this
+        // the instantaneous fallback score is used instead.
+        public const int VarianceMinSamples = 10;
+
+        public double PingVariance => PingVarianceSampleCount >= VarianceMinSamples
+            ? PingVarianceM2 / PingVarianceSampleCount
+            : double.MaxValue;
+
+        public double RiftVariance => RiftVarianceSampleCount >= VarianceMinSamples
+            ? RiftVarianceM2 / RiftVarianceSampleCount
+            : double.MaxValue;
 
         // ── Future: Input rate limiting (not yet implemented) ──
         #pragma warning disable CS0649 // Field is never assigned to

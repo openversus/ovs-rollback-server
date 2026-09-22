@@ -88,8 +88,8 @@ namespace OVS.Rollback.Core
             // ── Rift ──
 
             [LoggerMessage(EventId = 1400, Level = LogLevel.Information,
-                Message = "{callerName}: MatchID: {matchID} PIndex:{PlayerIndex} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
-            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex,
+                Message = "{callerName}: MatchID: {matchID} PIndex:{PlayerIndex} NAME:{playerName} PING:{Ping} RIFT:{SmoothRift:F2} RAWRIFT:{RawRift:F2} clientFrame:{ClientFrame:F1} serverFrame:{ServerFrame}")]
+            public static partial void RiftInfo(ILogger logger, string matchID, ushort playerIndex, string playerName,
                 short ping, float smoothRift, float rawRift, float clientFrame, uint serverFrame, [CallerMemberName] string callerName = "");
 
             // ── Tick Performance ──
@@ -101,9 +101,9 @@ namespace OVS.Rollback.Core
             // ── Warnings ──
 
             [LoggerMessage(EventId = 2000, Level = LogLevel.Warning,
-                Message = "{callerName}: DESYNC at frame {Frame}: player {PlayerA}={ChecksumA} vs player {PlayerB}={ChecksumB}")]
+                Message = "{callerName}: DESYNC at frame {Frame}: player (name: {PlayerNameA}) {PlayerA}={ChecksumA} vs player (name: {PlayerNameB}) {PlayerB}={ChecksumB}")]
             public static partial void DesyncDetected(ILogger logger, uint frame,
-                ushort playerA, string checksumA, ushort playerB, string checksumB, [CallerMemberName] string callerName = "");
+                ushort playerA, string? playerNameA, string checksumA, ushort playerB, string playerNameB, string checksumB, [CallerMemberName] string callerName = "");
 
             [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
                 Message = "{callerName}: Bit-packing fallback: {Reason}")]
@@ -116,6 +116,10 @@ namespace OVS.Rollback.Core
             [LoggerMessage(EventId = 2003, Level = LogLevel.Warning,
                 Message = "{callerName}: Neither OVS_SERVER nor mvsi_server set")]
             public static partial void NoServerConfigured(ILogger logger, [CallerMemberName] string callerName = "");
+
+            [LoggerMessage(EventId = 2004, Level = LogLevel.Warning,
+                Message = "{callerName}: Decompression failed for {Length}-byte packet from {Remote}; treating as uncompressed")]
+            public static partial void DecompressionFailed(ILogger logger, Exception exception, int length, string remote, [CallerMemberName] string callerName = "");
 
             // ── Errors ──
 

@@ -10,6 +10,7 @@
 *.userosscache
 *.sln.docstates
 *.env
+/temp/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
@@ -426,3 +427,6 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# Local two-client desync harness (not for commit until reviewed)
+harness/

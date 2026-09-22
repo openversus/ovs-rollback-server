@@ -1,5 +1,6 @@
 {
   "configProperties": {
+    "System.Runtime.TieredCompilation": true,
     "System.GC.LatencyLevel": "SustainedLowLatency",
     "System.GC.DynamicAdaptationMode": 1,
     "System.Threading.ThreadPool.MinThreads": 4

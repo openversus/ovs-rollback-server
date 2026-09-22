@@ -113,7 +113,10 @@ namespace OVS.Rollback.Utils
 
             try
             {
-                string json = JsonSerializer.Serialize(data);
+                // GetType() + context overload keeps polymorphic callers (RegisterPayload,
+                // MatchStatus via IMatchStatus) serializing their runtime type — the runtime
+                // type must be registered on OVSJsonContext.
+                string json = JsonSerializer.Serialize(data, data.GetType(), OVSJsonContext.Default);
                 string jsonAsB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
                 var contentHash = Utilities.CreateHMAC<string>(parsedMatchUpdateKey, jsonAsB64, HMACType.Hexlower);
                 requestHeaders.Add("BodyAsBase64", jsonAsB64);
@@ -184,7 +187,7 @@ namespace OVS.Rollback.Utils
                         Key = key
                     },
                     returnBody: true);
-                return JsonSerializer.Deserialize<OVSMatchConfig>(body);
+                return JsonSerializer.Deserialize(body, OVSJsonContext.Default.OVSMatchConfig);
             }
             catch (Exception ex)
             {
@@ -224,7 +227,7 @@ namespace OVS.Rollback.Utils
                     data: payload,
                     returnBody: true);
 
-                return JsonSerializer.Deserialize<MatchStatusResponse>(body);
+                return JsonSerializer.Deserialize(body, OVSJsonContext.Default.MatchStatusResponse);
             }
             catch (Exception ex)
             {

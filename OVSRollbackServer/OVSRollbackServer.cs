@@ -34,19 +34,23 @@ namespace OVS.Rollback
 
         public static async Task<int> Main(string[] args)
         {
+            logger.LogInformation("{LogPrefix} OVS Rollback Server version: {Version}, compiled on: {CompileTime}", LogPrefix, Statics.OVSRollbackVersion, CompileTime.CompileDateTime);
             RunTimer.Start();
 
             // ═══════════════════════════════════════════
             //  Initialize Configuration
             // ═══════════════════════════════════════════
 
-            logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+            if (logger.IsEnabled(LogLevel.Information))
+            {
+                logger.LogInformation("{LogPrefix} Initializing configuration...", LogPrefix);
+            }
 
             if (Statics.PreLoggerMessages.Count > 0)
             {
                 foreach (string message in Statics.PreLoggerMessages)
                 {
-                    logger.LogInformation($"{LogPrefix} PreLogger message: {message}");
+                    logger.LogInformation("{LogPrefix} PreLogger message: {message}", LogPrefix, message);
                 }
                 Statics.PreLoggerMessages.Clear();
             }
@@ -64,13 +68,13 @@ namespace OVS.Rollback
             ushort port = Config.Server.Port;
             int maxPlayers = Config.Server.MaxPlayers;
 
-            // cmdline options should take priority
-            if (port != Singletons.Port)
+            // cmdline options should take priority, but only when they were actually given
+            if (Singletons.PortSetOnCommandLine)
             {
                 port = Singletons.Port;
             }
 
-            if (maxPlayers != Singletons.MaxPlayers)
+            if (Singletons.MaxPlayersSetOnCommandLine)
             {
                 maxPlayers = Singletons.MaxPlayers;
             }
