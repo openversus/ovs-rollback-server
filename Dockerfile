@@ -65,7 +65,8 @@ ENV DOTNET_ReadyToRun=1
 #  Windows: $env:APPDATA\openversus\rollback-server
 #  Linux/Unices: $HOME/openversus/rollback-server
 #
-#ARG LOG_ARCHIVE_PATH=/tmp/rollback_logs
-#ENV Logging__LogArchivePath=${LOG_ARCHIVE_PATH}
+ARG LOG_ARCHIVE_PATH=/tmp/rollback_logs
+ENV Logging__LogArchivePath=${LOG_ARCHIVE_PATH}
 
 ENTRYPOINT ["./OVS.Rollback.Server"]
+
