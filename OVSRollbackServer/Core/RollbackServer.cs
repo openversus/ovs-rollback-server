@@ -1711,13 +1711,23 @@ namespace OVS.Rollback.Core
                 desyncConfig.ChecksumCleanupInterval > 0 &&
                 match.CurrentFrame % desyncConfig.ChecksumCleanupInterval == 0)
             {
-                uint minKeepChecksum = match.CurrentFrame > desyncConfig.ChecksumRetentionFrames
-                    ? match.CurrentFrame - desyncConfig.ChecksumRetentionFrames
+                // Frames at or below the handled watermark can never be evaluated again
+                // (HandleClientInput skips them), so they are dead. Frames above it are still
+                // waiting for a report: pruning them by age alone discarded the other players'
+                // checksums before a hitching client caught up, so its divergence was never
+                // compared. Keep them until the silent player would have hit
+                // DisconnectTimeoutSeconds, after which it no longer counts toward completion.
+                uint handled = match.LastHandledChecksumFrame;
+                uint abandonAge = Math.Max(
+                    desyncConfig.ChecksumRetentionFrames,
+                    (uint)(DisconnectTimeout * ServerConfiguration.Instance.Performance.TargetFrameRate));
+                uint abandonBefore = match.CurrentFrame > abandonAge
+                    ? match.CurrentFrame - abandonAge
                     : 0;
 
                 foreach (var kvp in match.FrameChecksums)
                 {
-                    if (kvp.Key < minKeepChecksum)
+                    if (kvp.Key <= handled || kvp.Key < abandonBefore)
                         match.FrameChecksums.TryRemove(kvp.Key, out _);
                 }
             }
