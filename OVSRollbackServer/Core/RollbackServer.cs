@@ -1693,10 +1693,45 @@ namespace OVS.Rollback.Core
                     var histMap = match.Inputs[i];
                     if (histMap.Count <= gameConfig.InputHistoryFrames) continue;
 
+                    // Never prune frames a connected recipient has not acked yet. A client
+                    // that hitches stops acking; if its unacked frames are pruned, Tick finds
+                    // them missing and sends it *predicted* (neutral) inputs for frames every
+                    // other client already received for real, and its simulation diverges.
+                    // The acked frame itself is kept because Tick reads inputMap[lastAck].
+                    // Disconnected recipients are excluded, so history resumes pruning once
+                    // DisconnectTimeoutSeconds marks a silent player disconnected.
+                    uint slotKeep = minKeep;
+                    PlayerInfo? laggard = null;
+                    for (int p = 0; p < ws.PlayerCount; p++)
+                    {
+                        var recipient = ws.PlayerSnapshot[p].Value;
+                        if (recipient.Disconnected) continue;
+                        uint acked;
+                        lock (recipient.Lock)
+                        {
+                            acked = i < recipient.AckedFrames.Count ? recipient.AckedFrames[i] : 0;
+                        }
+                        if (acked < slotKeep)
+                        {
+                            slotKeep = acked;
+                            laggard = recipient;
+                        }
+                    }
+
+                    if (laggard is not null && slotKeep > 0)
+                    {
+                        _logger.LogInformation(
+                            "Retaining input history for slot {Slot} from frame {KeepFrame} (age limit {AgeFrame}): " +
+                            "player {PlayerIndex} (name: {PlayerName}) has acked only up to it at server frame {ServerFrame}, " +
+                            "{AckLag} frames behind, in match {MatchId}",
+                            i, slotKeep, minKeep, laggard.PlayerIndex, laggard.PlayerName, match.CurrentFrame,
+                            match.CurrentFrame - slotKeep, match.MatchId);
+                    }
+
                     // ConcurrentDictionary enumeration is lock-free, no array allocated
                     foreach (var kvp in histMap)
                     {
-                        if (kvp.Key < minKeep)
+                        if (kvp.Key < slotKeep)
                             histMap.TryRemove(kvp.Key, out _);
                     }
                 }
