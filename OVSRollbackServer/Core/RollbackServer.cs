@@ -1158,7 +1158,7 @@ namespace OVS.Rollback.Core
             //{
             //    // Try to enter NoGCRegion for this single tick
             //    noGCActive = GC.TryStartNoGCRegion(
-            //        config.Performance.GarbageCollectionFreeRAMThreshold,
+            //        config.Performance.GarbageCollectionFreeRAMThreshold * 1024L * 1024L,
             //        disallowFullBlockingGC: true);
             //}
             //catch (InvalidOperationException)
@@ -1174,7 +1174,7 @@ namespace OVS.Rollback.Core
             //        "NoGCRegion will be disabled. Please appsettings.json and ensure " +
             //        "the threshold is less than the total available memory on the server, and " +
             //        "that the value provided is a positive integer measured in Megabytes (e.g. 512 for ~512MB).",
-            //        config.Performance.GarbageCollectionFreeRAMThreshold);
+            //        config.Performance.GarbageCollectionFreeRAMThreshold);   // megabytes
             //    noGCActive = false;
             //}
 
