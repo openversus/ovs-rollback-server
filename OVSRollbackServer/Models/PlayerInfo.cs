@@ -44,6 +44,10 @@ namespace OVS.Rollback.Models
         public bool HasNewPing { get; set; }
         public bool RiftInit { get; set; }
         public short Ping { get; set; }
+        /// <summary>Ring of recent raw round trips (ms), for ReportedPing = Peak.</summary>
+        public readonly short[] RecentPings = new short[256];
+        public int RecentPingCount { get; set; }
+        public int RecentPingNext { get; set; }
 
         // ── Client frame tracking ──
         public uint LastClientFrame { get; set; }

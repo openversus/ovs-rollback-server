@@ -325,6 +325,8 @@ dotnet OVSRollbackServer.dll
 |---------|------|---------|-------------|
 | `Algorithm` | string | ClientMatched | `ClientMatched` (see below) or `Legacy` (the original OVS smoothing). An unrecognised name falls back to `ClientMatched` |
 | `PingAlpha` | float | 0.15 | Ping smoothing factor (0-1, lower = smoother). Clients are sent the smoothed ping |
+| `ReportedPing` | string | Raw | Ping sent to clients, which sets their input delay (they only ever raise it): `Raw` (latest round trip, the original behaviour), `Smoothed` (SmoothedPing: fewer spikes, so usually less input delay), or `Peak` (highest round trip over the last `PeakPingWindow` acks) |
+| `PeakPingWindow` | uint | 60 | Peak only: how many recent round trips to take the maximum over (at most 256) |
 | `RiftAlpha` | float | 0.08 | Rift smoothing factor (0-1, lower = smoother) |
 | `TargetRift` | float | 0.5 | Frames ahead of the server a client is steered to |
 | `MaxRiftDeviation` | float | 10.0 | Normal limit on the rift sent to clients (frames) |

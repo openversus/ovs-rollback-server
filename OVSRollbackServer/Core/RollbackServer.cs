@@ -126,6 +126,15 @@ namespace OVS.Rollback.Core
                     configuredRift, RiftAlgorithms.Legacy.Name, RiftAlgorithms.ClientMatched.Name, riftAlgorithm.Name);
             }
 
+            string reportedPing = ServerConfiguration.Instance.RiftCalculation.ReportedPing;
+            if (reportedPing is not null
+                && (reportedPing.Equals("Raw", StringComparison.OrdinalIgnoreCase)
+                    || reportedPing.Equals("Smoothed", StringComparison.OrdinalIgnoreCase)
+                    || reportedPing.Equals("Peak", StringComparison.OrdinalIgnoreCase)))
+                _logger.LogInformation("Reported ping: {Mode}", reportedPing);
+            else
+                _logger.LogWarning("RiftCalculation.ReportedPing is '{Configured}', which is not Raw, Smoothed or Peak. Using Raw.", reportedPing);
+
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
             SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
 
@@ -787,10 +796,7 @@ namespace OVS.Rollback.Core
                                 PingAlpha * newPing + (1f - PingAlpha) * player.SmoothedPing, 255f);
                         }
 
-                        // Report the smoothed value, never the raw sample. The client raises its
-                        // input delay from each reported ping and never lowers it during a match,
-                        // so one spiky sample would cost the player a frame of delay for good.
-                        player.Ping = (short)player.SmoothedPing;
+                        player.Ping = PingToReport(player, newPing, config.RiftCalculation);
                         player.HasNewPing = true;
                     }
                 }
@@ -838,6 +844,39 @@ namespace OVS.Rollback.Core
                     match.MatchId,
                     string.Join(", ", reporters.Select(p => $"player {p.PlayerIndex} (name: {p.PlayerName}) = team {p.ReportedWinningTeam}")));
             }
+        }
+
+        private static bool IsReportedPing(RiftCalculationSettings s, string mode)
+            => string.Equals(s.ReportedPing, mode, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// The ping to send a client after a new round-trip sample. The client raises its input delay
+        /// from each value it is sent (about one frame per 24 ms above 60 ms, up to 10) and never
+        /// lowers it during a match, so this choice sets how much input delay players end up with.
+        /// </summary>
+        private static short PingToReport(PlayerInfo player, short newPing, RiftCalculationSettings s)
+        {
+            player.RecentPings[player.RecentPingNext] = newPing;
+            player.RecentPingNext = (player.RecentPingNext + 1) % player.RecentPings.Length;
+            player.RecentPingCount = Math.Min(player.RecentPingCount + 1, player.RecentPings.Length);
+
+            if (IsReportedPing(s, "Smoothed"))
+                return (short)player.SmoothedPing;
+
+            if (IsReportedPing(s, "Peak"))
+            {
+                int window = (int)Math.Clamp(s.PeakPingWindow, 1u, (uint)player.RecentPings.Length);
+                int n = Math.Min(window, player.RecentPingCount);
+                short peak = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    short p = player.RecentPings[(player.RecentPingNext - i + player.RecentPings.Length) % player.RecentPings.Length];
+                    if (p > peak) peak = p;
+                }
+                return peak;
+            }
+
+            return newPing;   // Raw
         }
 
         private void HandleReady(MatchState match, PlayerInfo player, bool isReady)
@@ -1290,7 +1329,10 @@ namespace OVS.Rollback.Core
 
             player.SmoothRift = RiftClamp.Apply(player.SmoothRift, riftError, config.RiftCalculation);
             player.ReportedRift = algorithm.Report(player, config);
-            player.Ping = (short)player.SmoothedPing;
+            // The original code also reset the reported ping to the smoothed value here, once per
+            // rift update; kept for Raw (and harmless for Smoothed), skipped for Peak.
+            if (!IsReportedPing(config.RiftCalculation, "Peak"))
+                player.Ping = (short)player.SmoothedPing;
             player.HasNewPing = false;
             player.HasNewFrame = false;
 

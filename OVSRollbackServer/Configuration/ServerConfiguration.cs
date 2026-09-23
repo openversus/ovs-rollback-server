@@ -236,6 +236,8 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
             riftCalculationSettings.Algorithm = GetEnvString("RiftCalculation__Algorithm", riftCalculationSettings.Algorithm) ?? "ClientMatched";
+            riftCalculationSettings.ReportedPing = GetEnvString("RiftCalculation__ReportedPing", riftCalculationSettings.ReportedPing) ?? "Raw";
+            riftCalculationSettings.PeakPingWindow = GetEnvUInt("RiftCalculation__PeakPingWindow", riftCalculationSettings.PeakPingWindow);
             riftCalculationSettings.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", riftCalculationSettings.MaxRiftDeviationBoost);
             riftCalculationSettings.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", riftCalculationSettings.MaxRiftDeviationBoostAbove);
             riftCalculationSettings.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", riftCalculationSettings.HysteresisEnter);
@@ -332,6 +334,8 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
             RiftCalculation.Algorithm = GetEnvString("RiftCalculation__Algorithm", RiftCalculation.Algorithm) ?? "ClientMatched";
+            RiftCalculation.ReportedPing = GetEnvString("RiftCalculation__ReportedPing", RiftCalculation.ReportedPing) ?? "Raw";
+            RiftCalculation.PeakPingWindow = GetEnvUInt("RiftCalculation__PeakPingWindow", RiftCalculation.PeakPingWindow);
             RiftCalculation.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", RiftCalculation.MaxRiftDeviationBoost);
             RiftCalculation.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", RiftCalculation.MaxRiftDeviationBoostAbove);
             RiftCalculation.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", RiftCalculation.HysteresisEnter);
@@ -469,6 +473,14 @@ namespace OVS.Rollback.Configuration
     public class RiftCalculationSettings
     {
         public float PingAlpha { get; set; } = 0.15f;
+        /// <summary>
+        /// Ping sent to clients, which they use to raise (never lower) their input delay:
+        /// "Raw" (the latest round trip; the original behaviour), "Smoothed" (SmoothedPing, which
+        /// removes spikes and so tends to leave input delay lower), or "Peak" (the highest round trip
+        /// over the last PeakPingWindow acks). Unrecognised values mean Raw.
+        /// </summary>
+        public string ReportedPing { get; set; } = "Raw";
+        public uint PeakPingWindow { get; set; } = 60;
         public float RiftAlpha { get; set; } = 0.08f;
         /// <summary>
         /// Normal limit on the reported rift, in frames. 10 is where the game client's correction gain
