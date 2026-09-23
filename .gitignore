@@ -428,5 +428,9 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
+# Cruft
+/.codegraph/
+/graphify-out/
+
 # Local two-client desync harness (not for commit until reviewed)
 harness/

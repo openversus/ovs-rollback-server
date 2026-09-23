@@ -207,8 +207,10 @@ namespace OVS.Rollback.Configuration
             performanceSettings.UseAdaptiveSpinThreshold = GetEnvBool("Performance__UseAdaptiveSpinThreshold", performanceSettings.UseAdaptiveSpinThreshold);
             performanceSettings.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", performanceSettings.MetricsSamplingInterval);
             performanceSettings.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", performanceSettings.TargetFrameRate);
-            // Env var is in MB; default 1024 MB (1 GB) to avoid accidentally OOMing machines with low RAM if GC is too aggressive. Adjust as needed for your server's RAM.
-            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
+            // Megabytes, like the appsettings value and the env var. The fallback is the value
+            // already loaded from configuration, so an unset env var leaves the file's value alone.
+            performanceSettings.GarbageCollectionFreeRAMThreshold = GetEnvInt(
+                "Performance__GarbageCollectionFreeRAMThreshold", performanceSettings.GarbageCollectionFreeRAMThreshold);
 
             // Networking settings
             networkingSettings.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", networkingSettings.ReceiveBufferSize);
@@ -296,7 +298,8 @@ namespace OVS.Rollback.Configuration
             Performance.MetricsSamplingInterval = GetEnvInt("Performance__MetricsSamplingInterval", Performance.MetricsSamplingInterval);
             Performance.TargetFrameRate = GetEnvInt("Performance__TargetFrameRate", Performance.TargetFrameRate);
             // Env var is in MB; default 1024 MB (see note above).
-            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt("Performance__GarbageCollectionFreeRAMThreshold", 1024) * 1024 * 1024;
+            Performance.GarbageCollectionFreeRAMThreshold = GetEnvInt(
+                "Performance__GarbageCollectionFreeRAMThreshold", Performance.GarbageCollectionFreeRAMThreshold);
 
             // Networking settings
             Networking.ReceiveBufferSize = GetEnvInt("Networking__ReceiveBufferSize", Networking.ReceiveBufferSize);
@@ -420,7 +423,13 @@ namespace OVS.Rollback.Configuration
         public bool UseAdaptiveSpinThreshold { get; set; } = true;
         public int MetricsSamplingInterval { get; set; } = 10;
         public int TargetFrameRate { get; set; } = 60;
-        public int GarbageCollectionFreeRAMThreshold { get; set; } = 1024 * 1024 * 1024;
+        /// <summary>
+        /// Free RAM below which a garbage collection is worth forcing, **in megabytes** — the same
+        /// unit as `appsettings.json` and the `Performance__GarbageCollectionFreeRAMThreshold`
+        /// environment variable. A consumer needs bytes: multiply by `1024L * 1024L`, in long,
+        /// because megabytes above 2047 overflow a 32-bit byte count.
+        /// </summary>
+        public int GarbageCollectionFreeRAMThreshold { get; set; } = 1024;
     }
 
     public class NetworkingSettings
