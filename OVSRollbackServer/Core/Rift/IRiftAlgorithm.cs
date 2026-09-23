@@ -37,6 +37,8 @@ namespace OVS.Rollback.Core.Rift
     {
         public static readonly IRiftAlgorithm Legacy = new LegacyRiftAlgorithm();
         public static readonly IRiftAlgorithm ClientMatched = new ClientMatchedRiftAlgorithm();
+        /// <summary>Used when nothing is configured, and when the configured name is not recognised.</summary>
+        public static readonly IRiftAlgorithm Default = ClientMatched;
 
         public static bool TryGet(string? name, out IRiftAlgorithm algorithm)
         {
@@ -50,11 +52,11 @@ namespace OVS.Rollback.Core.Rift
                 algorithm = ClientMatched;
                 return true;
             }
-            algorithm = Legacy;
+            algorithm = Default;
             return false;
         }
 
-        /// <summary>The configured algorithm, or Legacy when the name is unknown (Start() warns about that).</summary>
+        /// <summary>The configured algorithm, or <see cref="Default"/> when the name is unknown (Start() warns about that).</summary>
         public static IRiftAlgorithm Get(string? name)
         {
             TryGet(name, out var algorithm);

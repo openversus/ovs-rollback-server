@@ -235,7 +235,7 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", riftCalculationSettings.RiftUpdateInterval);
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
-            riftCalculationSettings.Algorithm = GetEnvString("RiftCalculation__Algorithm", riftCalculationSettings.Algorithm) ?? "Legacy";
+            riftCalculationSettings.Algorithm = GetEnvString("RiftCalculation__Algorithm", riftCalculationSettings.Algorithm) ?? "ClientMatched";
             riftCalculationSettings.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", riftCalculationSettings.MaxRiftDeviationBoost);
             riftCalculationSettings.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", riftCalculationSettings.MaxRiftDeviationBoostAbove);
             riftCalculationSettings.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", riftCalculationSettings.HysteresisEnter);
@@ -331,7 +331,7 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
-            RiftCalculation.Algorithm = GetEnvString("RiftCalculation__Algorithm", RiftCalculation.Algorithm) ?? "Legacy";
+            RiftCalculation.Algorithm = GetEnvString("RiftCalculation__Algorithm", RiftCalculation.Algorithm) ?? "ClientMatched";
             RiftCalculation.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", RiftCalculation.MaxRiftDeviationBoost);
             RiftCalculation.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", RiftCalculation.MaxRiftDeviationBoostAbove);
             RiftCalculation.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", RiftCalculation.HysteresisEnter);
@@ -482,8 +482,11 @@ namespace OVS.Rollback.Configuration
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
-        /// <summary>"Legacy" (the original OVS smoothing) or "ClientMatched" (Core/Rift/ClientMatchedRiftAlgorithm).</summary>
-        public string Algorithm { get; set; } = "Legacy";
+        /// <summary>
+        /// "ClientMatched" (the default; Core/Rift/ClientMatchedRiftAlgorithm) or "Legacy" (the original
+        /// OVS smoothing). An unrecognised name falls back to the default, with a warning at startup.
+        /// </summary>
+        public string Algorithm { get; set; } = "ClientMatched";
         // ClientMatched only
         public float HysteresisEnter { get; set; } = 1.25f;
         public float HysteresisExit { get; set; } = 0.75f;

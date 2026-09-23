@@ -361,6 +361,9 @@ namespace OVS.Rollback.Core
                     case ClientMessageType.Input:
                         HandleClientInput(match, player, (InputPayload)clientMsg.Value.Payload);
                         break;
+                    case ClientMessageType.MatchResult:
+                        HandleMatchResult(match, player, (MatchResultPayload)clientMsg.Value.Payload);
+                        break;
                     case ClientMessageType.Disconnecting:
                         player.Disconnected = true;
                         ServerMetrics.PlayersDisconnected.Add(1);
@@ -796,6 +799,47 @@ namespace OVS.Rollback.Core
 
         }
 
+        /// <summary>
+        /// A client sends MatchResult every tick once its match has ended locally. The first one is
+        /// recorded; once every connected player has reported, their winning teams are compared.
+        /// LastFrameChecksum is not compared: it is the checksum of whatever frame the client was on
+        /// when it sent the message, which the message does not say, and half of those are the
+        /// off-interval placeholder.
+        /// </summary>
+        private void HandleMatchResult(MatchState match, PlayerInfo player, MatchResultPayload payload)
+        {
+            if (player.IsSpectator) return;
+
+            lock (player.Lock)
+            {
+                if (player.ReportedWinningTeam >= 0) return;
+                player.ReportedWinningTeam = payload.WinningTeamIndex;
+            }
+
+            _logger.LogInformation(
+                "MatchResult: player {PlayerIndex} (name: {PlayerName}) reports winning team {Team} in match {MatchId}",
+                player.PlayerIndex, player.PlayerName, payload.WinningTeamIndex, match.MatchId);
+
+            var reporters = match.Players.Values.Where(p => !p.IsSpectator && !p.Disconnected).ToList();
+            if (reporters.Count == 0 || reporters.Any(p => p.ReportedWinningTeam < 0)) return;
+            if (!match.TryMarkMatchResultsCompared()) return;
+
+            if (reporters.Select(p => p.ReportedWinningTeam).Distinct().Count() == 1)
+            {
+                _logger.LogInformation(
+                    "MatchResult: all {Count} players agree on winning team {Team} in match {MatchId}",
+                    reporters.Count, reporters[0].ReportedWinningTeam, match.MatchId);
+            }
+            else
+            {
+                ServerMetrics.MatchResultDisagreements.Add(1);
+                _logger.LogWarning(
+                    "MatchResult: players disagree on the winner in match {MatchId}: {Reports}",
+                    match.MatchId,
+                    string.Join(", ", reporters.Select(p => $"player {p.PlayerIndex} (name: {p.PlayerName}) = team {p.ReportedWinningTeam}")));
+            }
+        }
+
         private void HandleReady(MatchState match, PlayerInfo player, bool isReady)
         {
             player.Ready = isReady;
@@ -897,9 +941,14 @@ namespace OVS.Rollback.Core
                     // resurrect a frame that was removed after evaluation.
                     if (f <= match.LastHandledChecksumFrame) continue;
 
+                    // Neither value is a checksum. Letting them vote produced false DESYNCs
+                    // (0 against a real value, 0 against the placeholder).
+                    uint checksum = payload.ChecksumPerFrame[i];
+                    if (checksum == ClientChecksums.NotHeld || checksum == ClientChecksums.OffInterval) continue;
+
                     var frameMap = match.FrameChecksums.GetOrAdd(
                         f, _ => new ConcurrentDictionary<int, uint>());
-                    frameMap.TryAdd(playerIdx, payload.ChecksumPerFrame[i]);
+                    frameMap.TryAdd(playerIdx, checksum);
                     buffered = true;
                 }
 

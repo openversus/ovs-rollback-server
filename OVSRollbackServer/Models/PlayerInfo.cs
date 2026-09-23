@@ -38,6 +38,8 @@ namespace OVS.Rollback.Models
         public float ReportedRift { get; set; }
         /// <summary>ClientMatched hysteresis latch: this client is currently being sent a correction.</summary>
         public bool RiftCorrecting { get; set; }
+        /// <summary>Winning team from this client's first MatchResult; -1 until it sends one.</summary>
+        public int ReportedWinningTeam { get; set; } = -1;
         public bool PingInitialized { get; set; }
         public bool HasNewPing { get; set; }
         public bool RiftInit { get; set; }

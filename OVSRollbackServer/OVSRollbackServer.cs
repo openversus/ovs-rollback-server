@@ -35,6 +35,10 @@ namespace OVS.Rollback
         public static async Task<int> Main(string[] args)
         {
             logger.LogInformation("{LogPrefix} OVS Rollback Server version: {Version}, compiled on: {CompileTime}", LogPrefix, Statics.OVSRollbackVersion, CompileTime.CompileDateTime);
+            if (Statics.IsExperimentalBuild)
+            {
+                logger.LogWarning("{LogPrefix} EXPERIMENTAL BUILD: {ExperimentalBuild}", LogPrefix, Statics.ExperimentalBuild);
+            }
             RunTimer.Start();
 
             // ═══════════════════════════════════════════

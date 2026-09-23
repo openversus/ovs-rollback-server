@@ -62,6 +62,8 @@ namespace OVS.Rollback.Utils
             s_meter.CreateCounter<long>("rollback.desyncs.detected");
         public static readonly Counter<long> ChecksumsProcessed =
             s_meter.CreateCounter<long>("rollback.checksums.processed");
+        public static readonly Counter<long> MatchResultDisagreements =
+            s_meter.CreateCounter<long>("rollback.matchresult.disagreements");
 
         // ── Match lifecycle ──
         public static readonly Counter<long> MatchesStarted =

@@ -185,9 +185,11 @@ namespace OVS.Rollback.Models
     }
 
     /// <summary>
-    /// Client type 4. Sent every tick once the match has ended locally (session state 7), until
-    /// the server replies with <see cref="ServerMessageType.EndOfMatchAck"/> or the client times out.
-    /// LastFrameChecksum is the checksum of the client's final frame.
+    /// Client type 4. Sent every tick once the match has ended locally (session state 7), until the
+    /// client leaves the match (it sends Disconnecting then) or the server replies with
+    /// <see cref="ServerMessageType.EndOfMatchAck"/>. LastFrameChecksum is the checksum of whatever
+    /// frame the client is on at that tick, which the message does not identify, so it cannot be
+    /// compared between clients.
     /// </summary>
     public class MatchResultPayload
     {

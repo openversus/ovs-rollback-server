@@ -21,6 +21,17 @@ namespace OVS.Rollback.Core
             public const int MaxSlots = 4;
         }
 
+        /// <summary>
+        /// Values the client's checksum function (0x141241b30) returns that are not checksums.
+        /// </summary>
+        public static class ClientChecksums
+        {
+            /// <summary>The client no longer holds that frame (past its rollback buffer) or has not reached it.</summary>
+            public const uint NotHeld = 0;
+            /// <summary>Placeholder for frames off the client's checksum interval (every 2nd frame in practice).</summary>
+            public const uint OffInterval = 0x0000CE58;
+        }
+
         public static class Endpoints
         {
             internal const string OVSRegister = "/ovs_register";

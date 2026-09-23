@@ -50,7 +50,7 @@ The OVS Rollback Server now supports a comprehensive configuration system with:
   },
   
   "RiftCalculation": {
-    "Algorithm": "Legacy",
+    "Algorithm": "ClientMatched",
     "PingAlpha": 0.12,
     "RiftAlpha": 0.08,
     "TargetRift": 0.5,
@@ -323,7 +323,7 @@ dotnet OVSRollbackServer.dll
 ### Rift Calculation Settings
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `Algorithm` | string | Legacy | `Legacy` (the original OVS smoothing) or `ClientMatched` (see below) |
+| `Algorithm` | string | ClientMatched | `ClientMatched` (see below) or `Legacy` (the original OVS smoothing). An unrecognised name falls back to `ClientMatched` |
 | `PingAlpha` | float | 0.15 | Ping smoothing factor (0-1, lower = smoother). Clients are sent the smoothed ping |
 | `RiftAlpha` | float | 0.08 | Rift smoothing factor (0-1, lower = smoother) |
 | `TargetRift` | float | 0.5 | Frames ahead of the server a client is steered to |

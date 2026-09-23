@@ -96,6 +96,10 @@ namespace OVS.Rollback.Models
             }
         }
 
+        // ── MatchResult comparison happens once per match ──
+        private int _matchResultsCompared;
+        public bool TryMarkMatchResultsCompared() => Interlocked.Exchange(ref _matchResultsCompared, 1) == 0;
+
         // ── Sequence & ping tracking ──
         public uint SequenceCounter { get; set; } = uint.MaxValue;
         public uint PingPhaseCount { get; set; }
