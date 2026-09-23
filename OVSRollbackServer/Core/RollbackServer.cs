@@ -320,8 +320,10 @@ namespace OVS.Rollback.Core
                 if (type == ClientMessageType.QualityData)
                 {
                     var qPayload = (QualityDataPayload)clientMsg.Value.Payload;
+                    // Pre-match ping phase. Capped like the PlayerInputAck path: this value reaches
+                    // the client in RequestQualityData and in the first PlayerInput messages.
                     if (player.PendingPings.TryRemove(qPayload.ServerMessageSequenceNumber, out long ts))
-                        player.Ping = (short)Stopwatch.GetElapsedTime(ts).TotalMilliseconds;
+                        player.Ping = (short)Math.Min(Stopwatch.GetElapsedTime(ts).TotalMilliseconds, 255);
                 }
 
                 switch (type)
@@ -769,7 +771,10 @@ namespace OVS.Rollback.Core
                                 PingAlpha * newPing + (1f - PingAlpha) * player.SmoothedPing, 255f);
                         }
 
-                        player.Ping = newPing;
+                        // Report the smoothed value, never the raw sample. The client raises its
+                        // input delay from each reported ping and never lowers it during a match,
+                        // so one spiky sample would cost the player a frame of delay for good.
+                        player.Ping = (short)player.SmoothedPing;
                         player.HasNewPing = true;
                     }
                 }
