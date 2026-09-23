@@ -8,6 +8,19 @@ namespace OVS.Rollback.Core
         public const int MaxPlayers = 8;
         public const bool EmulateP2 = false;
 
+        /// <summary>
+        /// Limits of the game client's PlayerInput parser (0x141216940 in the final build). It
+        /// fills a fixed 0x210-byte struct: 4 slots of start frame and frame count, and 30 input
+        /// words per slot. It checks neither count against those limits, so exceeding either
+        /// makes the client write past its own storage: a 31st frame overwrites the next slot's
+        /// first input, and a 5th slot runs past the end of the struct.
+        /// </summary>
+        public static class ClientLimits
+        {
+            public const int MaxFramesPerSlot = 30;
+            public const int MaxSlots = 4;
+        }
+
         public static class Endpoints
         {
             internal const string OVSRegister = "/ovs_register";

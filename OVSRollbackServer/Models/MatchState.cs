@@ -64,8 +64,9 @@ namespace OVS.Rollback.Models
         public ConcurrentDictionary<uint, ConcurrentDictionary<int, uint>> FrameChecksums { get; } = new();
 
         // ── Highest frame where every active (non-spectator, non-bot, connected)
-        //    player agreed on the checksum. Echoed to clients as ChecksumAckFrame
-        //    so they can free rollback history older than this frame. ──
+        //    player agreed on the checksum. Echoed to clients as ChecksumAckFrame,
+        //    which the client only stores (+1) as a statistic; it does not free any
+        //    history or change what the client sends. ──
         private uint _lastVerifiedFrame;
         public uint LastVerifiedFrame => Volatile.Read(ref _lastVerifiedFrame);
         public void TryAdvanceVerifiedFrame(uint frame)

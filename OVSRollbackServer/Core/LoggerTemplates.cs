@@ -105,10 +105,6 @@ namespace OVS.Rollback.Core
             public static partial void DesyncDetected(ILogger logger, uint frame,
                 ushort playerA, string? playerNameA, string checksumA, ushort playerB, string playerNameB, string checksumB, [CallerMemberName] string callerName = "");
 
-            [LoggerMessage(EventId = 2001, Level = LogLevel.Warning,
-                Message = "{callerName}: Bit-packing fallback: {Reason}")]
-            public static partial void BitPackingFallback(ILogger logger, string reason, [CallerMemberName] string callerName = "");
-
             [LoggerMessage(EventId = 2002, Level = LogLevel.Warning,
                 Message = "{callerName}: OVS_SERVER not set, checking mvsi_server")]
             public static partial void OVSNotSet(ILogger logger, [CallerMemberName] string callerName = "");

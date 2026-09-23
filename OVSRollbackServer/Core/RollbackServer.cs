@@ -24,7 +24,10 @@ namespace OVS.Rollback.Core
         private float TargetFrameTime => 1000f / ServerConfiguration.Instance.Performance.TargetFrameRate;
         private float PingAlpha => ServerConfiguration.Instance.RiftCalculation.PingAlpha;
         private float RiftAlpha => ServerConfiguration.Instance.RiftCalculation.RiftAlpha;
-        private byte MaxInputsPerFrame => ServerConfiguration.Instance.GameLogic.MaxInputsPerFrame;
+        // Capped at the client's per-slot limit whatever the configuration says; Start() warns
+        // when the configured value is higher.
+        private byte MaxInputsPerFrame => (byte)Math.Min(
+            (int)ServerConfiguration.Instance.GameLogic.MaxInputsPerFrame, Constants.ClientLimits.MaxFramesPerSlot);
         private int DisconnectTimeout => ServerConfiguration.Instance.GameLogic.DisconnectTimeoutSeconds;
 
         private readonly ushort _port;
@@ -100,6 +103,16 @@ namespace OVS.Rollback.Core
             }
 
             _running = true;
+
+            byte configuredMaxInputs = ServerConfiguration.Instance.GameLogic.MaxInputsPerFrame;
+            if (configuredMaxInputs > Constants.ClientLimits.MaxFramesPerSlot)
+            {
+                _logger.LogWarning(
+                    "GameLogic.MaxInputsPerFrame is {Configured}, but the game client holds at most {Limit} " +
+                    "inputs per player slot and overwrites its own memory past that. Using the limit instead.",
+                    configuredMaxInputs, Constants.ClientLimits.MaxFramesPerSlot);
+            }
+
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
             SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
 
@@ -387,6 +400,27 @@ namespace OVS.Rollback.Core
                                 description: "ConfigurationError",
                                 matchEvent: "TerminatingError",
                                 matchDescription: $"Failed to fetch match configuration for MatchId {matchData.MatchId}.",
+                                matchKey: matchData.Key
+                                )
+                            );
+                        return null;
+                    }
+
+                    // Every PlayerInput carries TeamSlotCount slots, and the client has room for
+                    // four (Constants.ClientLimits). A fifth slot is written past the end of the
+                    // client's message struct, so a match like that cannot run safely at all.
+                    int teamSlots = config.MaxPlayers - config.NumSpectators;
+                    if (teamSlots > Constants.ClientLimits.MaxSlots)
+                    {
+                        string slotError =
+                            $"Match {matchData.MatchId} has {teamSlots} team-side slots (MaxPlayers {config.MaxPlayers} " +
+                            $"- NumSpectators {config.NumSpectators}); the game client supports at most " +
+                            $"{Constants.ClientLimits.MaxSlots}. Refusing the match.";
+                        _logger.LogError("{Error}", slotError);
+                        _ = Events.SendTerminatingErrorEvent(this, StatusEventArgs.CreateNew(
+                                description: "ConfigurationError",
+                                matchEvent: "TerminatingError",
+                                matchDescription: slotError,
                                 matchKey: matchData.Key
                                 )
                             );
@@ -1672,8 +1706,9 @@ namespace OVS.Rollback.Core
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
                 ws.Payload.Rift = smoothRift;
-                // Highest frame on which all active players' checksums agreed —
-                // lets the client free rollback history older than this frame.
+                // Highest frame on which all active players' checksums agreed. The client
+                // only records this (+1) as a statistic; it frees nothing and changes nothing
+                // it sends.
                 ws.Payload.ChecksumAckFrame = match.LastVerifiedFrame;
 
                 // ── Zero-alloc serialize → compress → send (with pre-allocated sequence) ──

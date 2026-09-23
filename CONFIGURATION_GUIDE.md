@@ -86,6 +86,12 @@ The OVS Rollback Server now supports a comprehensive configuration system with:
 }
 ```
 
+**`GameLogic.MaxInputsPerFrame` can never usefully exceed 30.** The game client stores at most 30
+inputs per player slot in each PlayerInput message and does not bounds-check, so a 31st would
+overwrite another player's data inside the client. The server uses 30 whenever a higher value is
+configured, and logs a warning at startup. For the same reason a match may have at most 4
+team-side slots (`MaxPlayers - NumSpectators`); the server refuses a match with more.
+
 ---
 
 ## Environment Variables

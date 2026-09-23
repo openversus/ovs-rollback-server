@@ -122,30 +122,11 @@ namespace OVS
         // ═══════════════════════════════════════════
 
         /// <summary>
-        /// Serialize a server message. If <paramref name="tryBitPack"/> is true
-        /// and the payload is a <see cref="PlayerInputPayload"/>, attempts
-        /// uint16-per-input encoding. Falls back to standard uint32 on any failure.
+        /// Serialize a server message. Inputs are always written as uint32: the client's parser
+        /// has no 16-bit path, so a narrower encoding would desynchronise everything after it.
         /// </summary>
-        public static byte[] SerializeServerMessage(
-            ServerHeader header, object? payload, int maxPlayers,
-            bool tryBitPack = false)
+        public static byte[] SerializeServerMessage(ServerHeader header, object? payload, int maxPlayers)
         {
-            // ── Bit-packed fast path (PlayerInput only) ──
-            if (tryBitPack && payload is PlayerInputPayload pip)
-            {
-                try
-                {
-                    if (AllInputsFitIn16Bits(pip))
-                        return BuildPlayerInputPacket(header, pip, maxPlayers, bitPacked: true);
-                }
-                catch
-                {
-                    ServerMetrics.BitPackFallbacks.Add(1);
-                    // Fall through to standard path
-                }
-            }
-
-            // ── Standard path ──
             int size = HeaderSize + CalcPayloadSize(payload, maxPlayers);
             var buf = new byte[size];
             int o = 0;
@@ -155,82 +136,6 @@ namespace OVS
             WritePayload(buf, ref o, payload, maxPlayers);
 
             return o < buf.Length ? buf[..o] : buf;
-        }
-
-        // ── Bit-packing helpers ──
-
-        private static bool AllInputsFitIn16Bits(PlayerInputPayload p)
-        {
-            foreach (var playerInputs in p.InputPerFrame)
-                foreach (var val in playerInputs)
-                    if (val > ushort.MaxValue) return false;
-            return true;
-        }
-
-        private static byte[] BuildPlayerInputPacket(
-            ServerHeader header, PlayerInputPayload p, int mp, bool bitPacked)
-        {
-            int inputBytes = bitPacked ? 2 : 4;
-
-            // Calculate total input count
-            int totalInputs = 0;
-            for (int i = 0; i < mp && i < p.NumFrames.Count; i++)
-                totalInputs += p.NumFrames[i];
-
-            int size = HeaderSize
-                + 1                    // NumPlayers
-                + mp * 4               // StartFrame[]
-                + mp                   // NumFrames[]
-                + 2 + 2 + 2 + 2 + 2   // overrides, ping, loss, rift
-                + 4                    // ChecksumAckFrame
-                + totalInputs * inputBytes;
-
-            var buf = new byte[size];
-            int o = 0;
-
-            // Header
-            buf[o++] = (byte)header.Type;
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), header.Sequence); o += 4;
-
-            // PlayerInput payload
-            buf[o++] = p.NumPlayers;
-
-            for (int i = 0; i < mp; i++)
-            {
-                uint sf = i < p.StartFrame.Count ? p.StartFrame[i] : 0;
-                BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), sf); o += 4;
-            }
-            for (int i = 0; i < mp; i++)
-                buf[o++] = i < p.NumFrames.Count ? p.NumFrames[i] : (byte)0;
-
-            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumPredictedOverrides); o += 2;
-            BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), p.NumZeroedOverrides); o += 2;
-            BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.Ping); o += 2;
-            BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), p.PacketLossPercent); o += 2;
-            BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(o), (short)(p.Rift * 100)); o += 2;
-            BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.ChecksumAckFrame); o += 4;
-
-            for (int pi = 0; pi < mp; pi++)
-            {
-                var arr = pi < p.InputPerFrame.Count ? p.InputPerFrame[pi] : [];
-                byte nf = pi < p.NumFrames.Count ? p.NumFrames[pi] : (byte)0;
-                for (int f = 0; f < nf; f++)
-                {
-                    uint v = f < arr.Count ? arr[f] : 0;
-                    if (bitPacked)
-                    {
-                        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(o), (ushort)v);
-                        o += 2;
-                    }
-                    else
-                    {
-                        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), v);
-                        o += 4;
-                    }
-                }
-            }
-
-            return buf[..o];
         }
 
         // ── Standard payload sizing ──
@@ -262,7 +167,7 @@ namespace OVS
                     buf[o++] = p.MatchNumPlayers;
                     buf[o++] = p.PlayerIndex;
                     BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(o), p.MatchDurationInFrames); o += 4;
-                    buf[o++] = 0;
+                    buf[o++] = p.TrackMissingPlayers;
                     buf[o++] = p.IsValidationServerDebugMode;
                     break;
 
