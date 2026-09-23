@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using OVS.Rollback.Common;
 using OVS.Rollback.Configuration;
 using OVS.Rollback.Core;
+using OVS.Rollback.Core.Rift;
 using OVS.Rollback.Models;
 using OVS.Rollback.Utils;
 using System;
@@ -111,6 +112,18 @@ namespace OVS.Rollback.Core
                     "GameLogic.MaxInputsPerFrame is {Configured}, but the game client holds at most {Limit} " +
                     "inputs per player slot and overwrites its own memory past that. Using the limit instead.",
                     configuredMaxInputs, Constants.ClientLimits.MaxFramesPerSlot);
+            }
+
+            string configuredRift = ServerConfiguration.Instance.RiftCalculation.Algorithm;
+            if (RiftAlgorithms.TryGet(configuredRift, out var riftAlgorithm))
+            {
+                _logger.LogInformation("Rift algorithm: {Algorithm}", riftAlgorithm.Name);
+            }
+            else
+            {
+                _logger.LogWarning(
+                    "RiftCalculation.Algorithm is '{Configured}', which is not {Legacy} or {ClientMatched}. Using {Fallback}.",
+                    configuredRift, RiftAlgorithms.Legacy.Name, RiftAlgorithms.ClientMatched.Name, riftAlgorithm.Name);
             }
 
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
@@ -1159,11 +1172,10 @@ namespace OVS.Rollback.Core
         private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame)
         {
             var config = ServerConfiguration.Instance;
+            IRiftAlgorithm algorithm = RiftAlgorithms.Get(config.RiftCalculation.Algorithm);
 
-
-            if (serverFrame % config.RiftCalculation.RiftUpdateInterval != 0 && serverFrame > config.RiftCalculation.RiftUpdateThreshold)
+            if (!algorithm.ShouldUpdate(serverFrame, config))
             {
-
                 return;
             }
             if (!player.HasNewPing || !player.HasNewFrame)
@@ -1182,7 +1194,11 @@ namespace OVS.Rollback.Core
             {
                 player.RiftInit = true;
                 // NEW: Initialize with bias toward target rift
-                player.SmoothRift = rawRift - config.RiftCalculation.TargetRift;
+                float initialError = rawRift - config.RiftCalculation.TargetRift;
+                // Clamped like every later value: an unclamped first measurement of a client that
+                // joined far behind could exceed 50, which the client treats as unrecoverable.
+                player.SmoothRift = RiftClamp.Apply(initialError, initialError, config.RiftCalculation);
+                player.ReportedRift = algorithm.Report(player, config);
                 player.Rift = rawRift;
                 player.HasNewPing = false;
                 player.HasNewFrame = false;
@@ -1221,48 +1237,22 @@ namespace OVS.Rollback.Core
             // Positive error = client too far ahead, negative = client behind
             float riftError = rawRift - config.RiftCalculation.TargetRift;
 
-            if (config.RiftCalculation.UseAggressiveCorrection)
-            {
-                // Aggressive mode: snap quickly to reduce perceived delay
-                if (MathF.Abs(riftError) < 0.2f)
-                {
-                    // Very close to target - hold steady
-                    player.SmoothRift = riftError;
-                }
-                else if (MathF.Abs(riftError) < MathF.Abs(player.SmoothRift))
-                {
-                    // Converging - snap immediately
-                    player.SmoothRift = riftError;
-                }
-                else
-                {
-                    // Diverging - use higher smoothing factor for faster response
-                    float aggressiveAlpha = MathF.Min(RiftAlpha * 2.0f, 0.3f);
-                    player.SmoothRift = aggressiveAlpha * riftError + (1f - aggressiveAlpha) * player.SmoothRift;
-                }
-            }
-            else
-            {
-                // Conservative mode (original behavior)
-                if (MathF.Abs(riftError) < 0.5f)
-                {
-                    player.SmoothRift *= 0.5f;
-                    if (MathF.Abs(player.SmoothRift) < 0.01f)
-                        player.SmoothRift = 0f;
-                }
-                else
-                {
-                    player.SmoothRift = RiftAlpha * riftError + (1f - RiftAlpha) * player.SmoothRift;
-                }
+            algorithm.UpdateSmoothRift(player, riftError, config);
 
-                if (MathF.Abs(riftError) < MathF.Abs(player.SmoothRift))
-                    player.SmoothRift = riftError;
-            }
-
-            player.SmoothRift = PlayerInfo.ClampFloat(player.SmoothRift, config.RiftCalculation.MaxRiftDeviation);
+            player.SmoothRift = RiftClamp.Apply(player.SmoothRift, riftError, config.RiftCalculation);
+            player.ReportedRift = algorithm.Report(player, config);
             player.Ping = (short)player.SmoothedPing;
             player.HasNewPing = false;
             player.HasNewFrame = false;
+
+            // Variance, metrics and the RiftInfo log keep the original cadence whichever algorithm is
+            // selected, so their sample rate and the log's shape don't change with it.
+            bool onReportingCadence = serverFrame % config.RiftCalculation.RiftUpdateInterval == 0
+                || serverFrame <= config.RiftCalculation.RiftUpdateThreshold;
+            if (!onReportingCadence)
+            {
+                return;
+            }
 
             // ── Welford online variance: ping ──
             // One sample per committed ping update, under player.Lock (held by caller).
@@ -1599,14 +1589,14 @@ namespace OVS.Rollback.Core
 
                 uint lastClientFrame;
                 short ping;
-                float smoothRift;
+                float reportedRift;
                 lock (recipient.Lock)
                 {
                     for (int i = 0; i < match.TeamSlotCount && i < recipient.AckedFrames.Count; i++)
                         ws.AckedFrames[i] = recipient.AckedFrames[i];
                     lastClientFrame = recipient.LastClientFrame;
                     ping = recipient.Ping;
-                    smoothRift = recipient.SmoothRift;  // ← Pure SmoothRift, no bias
+                    reportedRift = recipient.ReportedRift;  // clamped, and after the algorithm's report step
                 }
 
                 ushort numPredictedOverrides = 0;
@@ -1710,7 +1700,7 @@ namespace OVS.Rollback.Core
                 ws.Payload.NumPlayers = (byte)match.TeamSlotCount;
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
-                ws.Payload.Rift = smoothRift;
+                ws.Payload.Rift = reportedRift;
                 // Highest frame on which all active players' checksums agreed. The client
                 // only records this (+1) as a statistic; it frees nothing and changes nothing
                 // it sends.

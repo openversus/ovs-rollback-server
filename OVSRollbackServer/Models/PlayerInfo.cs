@@ -34,6 +34,10 @@ namespace OVS.Rollback.Models
         // ── Ping smoothing ──
         public float SmoothedPing { get; set; }
         public float SmoothRift { get; set; }
+        /// <summary>The value last sent as PlayerInput.Rift: SmoothRift after clamping and the algorithm's report step.</summary>
+        public float ReportedRift { get; set; }
+        /// <summary>ClientMatched hysteresis latch: this client is currently being sent a correction.</summary>
+        public bool RiftCorrecting { get; set; }
         public bool PingInitialized { get; set; }
         public bool HasNewPing { get; set; }
         public bool RiftInit { get; set; }

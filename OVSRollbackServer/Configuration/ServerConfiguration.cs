@@ -235,6 +235,13 @@ namespace OVS.Rollback.Configuration
             riftCalculationSettings.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", riftCalculationSettings.RiftUpdateInterval);
             riftCalculationSettings.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", riftCalculationSettings.RiftUpdateThreshold);
             riftCalculationSettings.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", riftCalculationSettings.UseAggressiveCorrection);
+            riftCalculationSettings.Algorithm = GetEnvString("RiftCalculation__Algorithm", riftCalculationSettings.Algorithm) ?? "Legacy";
+            riftCalculationSettings.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", riftCalculationSettings.MaxRiftDeviationBoost);
+            riftCalculationSettings.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", riftCalculationSettings.MaxRiftDeviationBoostAbove);
+            riftCalculationSettings.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", riftCalculationSettings.HysteresisEnter);
+            riftCalculationSettings.HysteresisExit = GetEnvFloat("RiftCalculation__HysteresisExit", riftCalculationSettings.HysteresisExit);
+            riftCalculationSettings.SmallErrorAlpha = GetEnvFloat("RiftCalculation__SmallErrorAlpha", riftCalculationSettings.SmallErrorAlpha);
+            riftCalculationSettings.SmallErrorBelow = GetEnvFloat("RiftCalculation__SmallErrorBelow", riftCalculationSettings.SmallErrorBelow);
 
             // Ping phase settings
             pingPhaseSettings.TotalPings = GetEnvUInt("PingPhase__TotalPings", pingPhaseSettings.TotalPings);
@@ -324,6 +331,13 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.RiftUpdateInterval = GetEnvUInt("RiftCalculation__RiftUpdateInterval", RiftCalculation.RiftUpdateInterval);
             RiftCalculation.RiftUpdateThreshold = GetEnvUInt("RiftCalculation__RiftUpdateThreshold", RiftCalculation.RiftUpdateThreshold);
             RiftCalculation.UseAggressiveCorrection = GetEnvBool("RiftCalculation__UseAggressiveCorrection", RiftCalculation.UseAggressiveCorrection);
+            RiftCalculation.Algorithm = GetEnvString("RiftCalculation__Algorithm", RiftCalculation.Algorithm) ?? "Legacy";
+            RiftCalculation.MaxRiftDeviationBoost = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoost", RiftCalculation.MaxRiftDeviationBoost);
+            RiftCalculation.MaxRiftDeviationBoostAbove = GetEnvFloat("RiftCalculation__MaxRiftDeviationBoostAbove", RiftCalculation.MaxRiftDeviationBoostAbove);
+            RiftCalculation.HysteresisEnter = GetEnvFloat("RiftCalculation__HysteresisEnter", RiftCalculation.HysteresisEnter);
+            RiftCalculation.HysteresisExit = GetEnvFloat("RiftCalculation__HysteresisExit", RiftCalculation.HysteresisExit);
+            RiftCalculation.SmallErrorAlpha = GetEnvFloat("RiftCalculation__SmallErrorAlpha", RiftCalculation.SmallErrorAlpha);
+            RiftCalculation.SmallErrorBelow = GetEnvFloat("RiftCalculation__SmallErrorBelow", RiftCalculation.SmallErrorBelow);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -456,11 +470,25 @@ namespace OVS.Rollback.Configuration
     {
         public float PingAlpha { get; set; } = 0.15f;
         public float RiftAlpha { get; set; } = 0.08f;
-        public float MaxRiftDeviation { get; set; } = 20.0f;
+        /// <summary>
+        /// Normal limit on the reported rift, in frames. 10 is where the game client's correction gain
+        /// triples; past it corrections overshoot (see Core/Rift/RiftClamp).
+        /// </summary>
+        public float MaxRiftDeviation { get; set; } = 10.0f;
+        /// <summary>Limit allowed while the error exceeds MaxRiftDeviationBoostAbove. Must stay below 50 (client disconnect).</summary>
+        public float MaxRiftDeviationBoost { get; set; } = 20.0f;
+        public float MaxRiftDeviationBoostAbove { get; set; } = 60.0f;
         public float TargetRift { get; set; } = 0.5f;
         public uint RiftUpdateInterval { get; set; } = 10;
         public uint RiftUpdateThreshold { get; set; } = 500;
         public bool UseAggressiveCorrection { get; set; } = true;
+        /// <summary>"Legacy" (the original OVS smoothing) or "ClientMatched" (Core/Rift/ClientMatchedRiftAlgorithm).</summary>
+        public string Algorithm { get; set; } = "Legacy";
+        // ClientMatched only
+        public float HysteresisEnter { get; set; } = 1.25f;
+        public float HysteresisExit { get; set; } = 0.75f;
+        public float SmallErrorAlpha { get; set; } = 0.2f;
+        public float SmallErrorBelow { get; set; } = 3.0f;
     }
 
     public class PingPhaseSettings

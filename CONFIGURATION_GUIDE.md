@@ -50,10 +50,14 @@ The OVS Rollback Server now supports a comprehensive configuration system with:
   },
   
   "RiftCalculation": {
-    "PingAlpha": 0.1,
-    "RiftAlpha": 0.05,
-    "MaxRiftDeviation": 20.0,
-    "RiftUpdateInterval": 60,
+    "Algorithm": "Legacy",
+    "PingAlpha": 0.12,
+    "RiftAlpha": 0.08,
+    "TargetRift": 0.5,
+    "MaxRiftDeviation": 10.0,
+    "MaxRiftDeviationBoost": 20.0,
+    "MaxRiftDeviationBoostAbove": 60.0,
+    "RiftUpdateInterval": 10,
     "RiftUpdateThreshold": 500
   },
   
@@ -319,11 +323,28 @@ dotnet OVSRollbackServer.dll
 ### Rift Calculation Settings
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `PingAlpha` | float | 0.1 | Ping smoothing factor (0-1, lower = smoother) |
-| `RiftAlpha` | float | 0.05 | Rift smoothing factor (0-1, lower = smoother) |
-| `MaxRiftDeviation` | float | 20.0 | Maximum rift value (frames) |
-| `RiftUpdateInterval` | uint | 60 | Update rift every N frames |
-| `RiftUpdateThreshold` | uint | 500 | Start updates after N frames |
+| `Algorithm` | string | Legacy | `Legacy` (the original OVS smoothing) or `ClientMatched` (see below) |
+| `PingAlpha` | float | 0.15 | Ping smoothing factor (0-1, lower = smoother). Clients are sent the smoothed ping |
+| `RiftAlpha` | float | 0.08 | Rift smoothing factor (0-1, lower = smoother) |
+| `TargetRift` | float | 0.5 | Frames ahead of the server a client is steered to |
+| `MaxRiftDeviation` | float | 10.0 | Normal limit on the rift sent to clients (frames) |
+| `MaxRiftDeviationBoost` | float | 20.0 | Limit allowed while the error exceeds `MaxRiftDeviationBoostAbove`. Must stay below 50 |
+| `MaxRiftDeviationBoostAbove` | float | 60.0 | Error (frames) above which the boost limit applies |
+| `UseAggressiveCorrection` | bool | true | Legacy only: snap toward the target when converging |
+| `RiftUpdateInterval` | uint | 10 | Legacy: update rift every N frames after the threshold. Also the cadence of rift logs and metrics for both algorithms |
+| `RiftUpdateThreshold` | uint | 500 | Legacy: update every frame until this frame |
+| `HysteresisEnter` / `HysteresisExit` | float | 1.25 / 0.75 | ClientMatched: start sending a correction above Enter, send exactly 0 once below Exit |
+| `SmallErrorAlpha` / `SmallErrorBelow` | float | 0.2 / 3.0 | ClientMatched: smoothing for errors under SmallErrorBelow frames |
+
+**What the client does with the rift.** The game client resets its clock correction on every
+PlayerInput and derives it from that message's rift alone. It ignores anything within ±1 frame,
+corrects in proportion to the rift up to 10 frames, triples its gain above 10, and disconnects above
+50. It keeps correcting at the last value it was sent, so a stale value overshoots. Hence the limit
+of 10: above it corrections overshoot, sometimes by 20 frames or more. The boost to 20 applies only
+while a client is still far off (more than 60 frames), so long stalls are recovered as fast as before.
+`ClientMatched` sends a fresh value every frame, replaces the smoothed value when the error changes
+sign, and holds the client's deadband with hysteresis. It was chosen by simulating the client's
+correction law against production logs (details in the reverse-engineering archive, `rift.md`).
 
 **Tuning Recommendations:**
 - **Stable connections:** `PingAlpha=0.05`, `RiftAlpha=0.03` (smoother)
