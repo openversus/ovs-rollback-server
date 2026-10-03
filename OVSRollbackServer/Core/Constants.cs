@@ -41,6 +41,8 @@ namespace OVS.Rollback.Core
             internal const string OVSMatchStarted = "/ovs_match_started";
             /// <summary>Match id + key: a P2P host node is serving, so the players may be told their server is ready.</summary>
             internal const string OVSP2PReady = "/ovs_p2p_ready";
+            /// <summary>Match id + key: no peer path opened; the server deploys the relay (once) and answers {host, port}.</summary>
+            internal const string OVSP2PFailed = "/ovs_p2p_failed";
             internal const string MVSIRegister = "/mvsi_register";
             internal const string MVSIEndMatch = "/mvsi_end_match";
         }

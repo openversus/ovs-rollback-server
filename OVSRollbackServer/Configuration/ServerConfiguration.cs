@@ -356,6 +356,7 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.HysteresisExit = GetEnvFloat("RiftCalculation__HysteresisExit", RiftCalculation.HysteresisExit);
             RiftCalculation.SmallErrorAlpha = GetEnvFloat("RiftCalculation__SmallErrorAlpha", RiftCalculation.SmallErrorAlpha);
             RiftCalculation.SmallErrorBelow = GetEnvFloat("RiftCalculation__SmallErrorBelow", RiftCalculation.SmallErrorBelow);
+            RiftCalculation.HostClockOffset = GetEnvBool("RiftCalculation__HostClockOffset", RiftCalculation.HostClockOffset);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -458,8 +459,8 @@ namespace OVS.Rollback.Configuration
         /// <summary>The rendezvous service, as host:port (UDP). Empty disables P2P: every match is forwarded to RelayFallback.</summary>
         public string Rendezvous { get; set; } = String.Empty;
         /// <summary>
-        /// Where to forward a match when no peer path opens within PunchTimeoutSeconds, as host:port: the cloud
-        /// rollback server. Empty: the match is refused (the game times out after 45 s).
+        /// Bench only: a fixed relay (host:port) used when no peer path opens, instead of asking the server for
+        /// one (/ovs_p2p_failed, which deploys the match's relay and answers with its address). Empty on players.
         /// </summary>
         public string RelayFallback { get; set; } = String.Empty;
         /// <summary>Testing only: "host" or "forwarder" takes the role regardless of the match config; empty follows is_host.</summary>
@@ -553,6 +554,12 @@ namespace OVS.Rollback.Configuration
         public float HysteresisExit { get; set; } = 0.75f;
         public float SmallErrorAlpha { get; set; } = 0.2f;
         public float SmallErrorBelow { get; set; } = 3.0f;
+        /// <summary>
+        /// P2P host fairness. A game on the same machine as the engine (loopback) is steered to lag the engine's
+        /// clock by half the slowest remote player's round trip, and is told that round trip as its ping, so both
+        /// sides see each other's inputs half a round trip late and raise input delay alike. Off for a relay.
+        /// </summary>
+        public bool HostClockOffset { get; set; } = false;
     }
 
     public class PingPhaseSettings

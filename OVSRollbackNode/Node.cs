@@ -57,6 +57,7 @@ namespace OVS.Rollback.Node
             public IPEndPoint? Target;          // forwarder: where the game's datagrams go
             public bool TargetIsRelay;
             public IPEndPoint? Relay;
+            public Task<IPEndPoint?>? RelayLookup;
             public IPEndPoint? PublicEndPoint;
             public TimeSpan NextRegister;
             public TimeSpan LastGame = now;
@@ -67,7 +68,7 @@ namespace OVS.Rollback.Node
         private readonly ILogger _log;
         private readonly ServerConfiguration _config;
         private readonly NodeSettings _settings;
-        private readonly ushort _port;
+        private ushort _port;
         private readonly Socket _socket;
         private readonly RollbackServer _engine;
         private readonly Stopwatch _clock = Stopwatch.StartNew();
@@ -99,7 +100,19 @@ namespace OVS.Rollback.Node
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             UdpSockets.IgnoreConnectionReset(_socket);
             SocketConfigurator.ConfigureForLowLatency(_socket, _log);
-            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
+            try
+            {
+                _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
+            }
+            catch (SocketException e) when (e.SocketErrorCode == SocketError.AddressAlreadyInUse)
+            {
+                // The fixed port is taken: take any free one. The rendezvous and the relay only ever see the
+                // public mapping, so the port is nobody's business but the game's, which is told the fixed one by
+                // the server until the client reports its port at /identify (not built yet).
+                _socket.Bind(new IPEndPoint(IPAddress.Any, 0));
+                _port = (ushort)((IPEndPoint)_socket.LocalEndPoint!).Port;
+                _log.LogWarning("UDP {Fixed} is in use; listening on {Port} instead. The game is still told the fixed port, so this node will not be found until the client reports its port.", port, _port);
+            }
             _engine = new RollbackServer(Utilities.NewLogger<RollbackServer>(), _socket, config.Server.MaxPlayers);
             // The server tells the cloud a match started through its authenticated status events; a node has no
             // such key, so it posts the key-checked route the TS server has for this instead.
@@ -362,6 +375,22 @@ namespace OVS.Rollback.Node
                 case Phase.Stuck:
                     break;
             }
+
+            if (s.RelayLookup is { IsCompleted: true } lookup && s.Target is null)
+            {
+                s.RelayLookup = null;
+                var relay = lookup.IsCompletedSuccessfully ? lookup.Result : null;
+                if (relay is null)
+                {
+                    _log.LogError("Match {Match}: the server named no relay; the game will time out", s.MatchId);
+                    s.Phase = Phase.Stuck;
+                }
+                else
+                {
+                    s.Relay = relay;
+                    UseTarget(s, relay, relay: true);
+                }
+            }
         }
 
         private void Resolve(Session s, OVSMatchConfig? config, TimeSpan now)
@@ -473,17 +502,38 @@ namespace OVS.Rollback.Node
 
         private void FallBack(Session s, string reason)
         {
+            if (s.RelayLookup is not null) return;      // already asked
             var relay = s.Relay ?? _relay;
-            if (relay is null)
+            if (relay is not null)
             {
-                _log.LogError("Match {Match}: {Reason}, and no relay is configured; the game will time out", s.MatchId, reason);
-                s.Phase = Phase.Stuck;
+                _log.LogWarning("Match {Match}: {Reason}; falling back to the configured relay at {Relay}{Was}", s.MatchId, reason, relay,
+                    s.Role == Role.Host ? " (this node would have hosted)" : "");
+                s.Role = Role.Forwarder;
+                UseTarget(s, relay, relay: true);
                 return;
             }
-            _log.LogWarning("Match {Match}: {Reason}; falling back to the relay at {Relay}{Was}", s.MatchId, reason, relay,
+            // The server deploys the relay for this match on the first report and answers with its address.
+            _log.LogWarning("Match {Match}: {Reason}; asking the server for a relay{Was}", s.MatchId, reason,
                 s.Role == Role.Host ? " (this node would have hosted)" : "");
             s.Role = Role.Forwarder;
-            UseTarget(s, relay, relay: true);
+            s.RelayLookup = LookUpRelayAsync(s.MatchId, s.Key);
+        }
+
+        private async Task<IPEndPoint?> LookUpRelayAsync(string matchId, string key)
+        {
+            string body = await Singletons.SharedHTTPHelper.PostMatchKeyedForBodyAsync(Constants.Endpoints.OVSP2PFailed, matchId, key);
+            if (string.IsNullOrWhiteSpace(body)) return null;
+            try
+            {
+                var answer = System.Text.Json.JsonSerializer.Deserialize(body, OVSJsonContext.Default.P2PRelayResponse);
+                if (answer is null || answer.Port <= 0 || string.IsNullOrWhiteSpace(answer.Host)) return null;
+                return LocalCandidates.Parse($"{answer.Host}:{answer.Port}");
+            }
+            catch (System.Text.Json.JsonException e)
+            {
+                _log.LogError("Match {Match}: the relay answer could not be read: {Error}; body {Body}", matchId, e.Message, body);
+                return null;
+            }
         }
 
         private void Send(byte[] data, int length, IPEndPoint to)

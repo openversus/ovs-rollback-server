@@ -18,6 +18,15 @@ namespace OVS.Rollback.Models
         public string PlayerName { get; set; } = String.Empty;
         public string PlayerCharacter { get; set; } = String.Empty;
         public bool IsSpectator { get; set; } = false;
+        /// <summary>The game is on this machine (loopback): the P2P host's own game.</summary>
+        public bool IsLocal { get; set; }
+        /// <summary>
+        /// Frames added to TargetRift for this player. The P2P host's game gets minus half the slowest remote
+        /// round trip (RiftCalculation.HostClockOffset), so it runs that much behind the engine's clock.
+        /// </summary>
+        public float TargetRiftOffset { get; set; }
+        /// <summary>The ping to report instead of the measured one; -1 for the measured one.</summary>
+        public short PingOverride { get; set; } = -1;
 
         // ── Sequence tracking ──
         public uint LastSeqRecv { get; set; }

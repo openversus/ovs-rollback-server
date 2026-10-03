@@ -27,10 +27,13 @@ namespace OVS.Rollback.Node
             {
                 logger.LogWarning("Server.FireMatchEvents is on; a node has no MatchUpdateKey, so every match event it sends will be rejected. Turn it off in appsettings.json.");
             }
-            if (string.IsNullOrWhiteSpace(config.Node.Rendezvous) && string.IsNullOrWhiteSpace(config.Node.RelayFallback))
+            if (string.IsNullOrWhiteSpace(config.Node.Rendezvous))
             {
-                logger.LogError("Neither Node.Rendezvous nor Node.RelayFallback is set: the node could neither find a peer nor forward to a relay. Set at least one.");
-                return 2;
+                logger.LogWarning("Node.Rendezvous is not set: every match will go to a relay (the server's, or Node.RelayFallback).");
+            }
+            if (config.RiftCalculation.HostClockOffset)
+            {
+                logger.LogInformation("Host clock offset on: this machine's game is paced half the slowest remote round trip behind the engine");
             }
 
             using var cts = new CancellationTokenSource();

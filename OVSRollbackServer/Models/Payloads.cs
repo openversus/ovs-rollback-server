@@ -369,4 +369,14 @@ namespace OVS.Rollback.Models
     [Serializable]
     public class MatchStatusResponse
     { }
+
+    /// <summary>The answer to /ovs_p2p_failed: the relay for this match.</summary>
+    [Serializable]
+    public class P2PRelayResponse
+    {
+        [JsonPropertyName("host")]
+        public string Host { get; set; } = String.Empty;
+        [JsonPropertyName("port")]
+        public int Port { get; set; }
+    }
 }

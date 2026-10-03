@@ -67,7 +67,8 @@
     "HysteresisEnter": 1.25,
     "HysteresisExit": 0.75,
     "SmallErrorAlpha": 0.2,
-    "SmallErrorBelow": 3.0
+    "SmallErrorBelow": 3.0,
+    "HostClockOffset": true
   },
 
   "PingPhase": {

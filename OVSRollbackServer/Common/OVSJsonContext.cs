@@ -28,6 +28,7 @@ namespace OVS.Rollback.Common
     [JsonSerializable(typeof(NodeSettings))]
     [JsonSerializable(typeof(OVSMatchConfig))]
     [JsonSerializable(typeof(MatchStatusResponse))]
+    [JsonSerializable(typeof(P2PRelayResponse))]
     [JsonSerializable(typeof(RegisterPayload))]
     [JsonSerializable(typeof(EndMatchPayload))]
     [JsonSerializable(typeof(MatchStatus))]

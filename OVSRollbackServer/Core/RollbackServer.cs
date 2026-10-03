@@ -653,6 +653,7 @@ namespace OVS.Rollback.Core
                 // (8888, 8889, 8890, ...) so multiple specs in one match don't
                 // collide on the OvsPlayer lookup.
                 IsSpectator = payload.PlayerData.PlayerIndex >= 8888 ? true : false,
+                IsLocal = IPAddress.IsLoopback(remote.Address),
                 LastSeqRecv = 0,
                 LastSeqSent = 0,
                 // Sized to wire-protocol slot count, not MaxPlayers — spectator
@@ -1350,8 +1351,8 @@ namespace OVS.Rollback.Core
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
-                // NEW: Initialize with bias toward target rift
-                float initialError = rawRift - config.RiftCalculation.TargetRift;
+                // NEW: Initialize with bias toward target rift (plus this player's offset, the P2P host's lag)
+                float initialError = rawRift - (config.RiftCalculation.TargetRift + player.TargetRiftOffset);
                 // Clamped like every later value: an unclamped first measurement of a client that
                 // joined far behind could exceed 50, which the client treats as unrecoverable.
                 player.SmoothRift = RiftClamp.Apply(initialError, initialError, config.RiftCalculation);
@@ -1390,9 +1391,9 @@ namespace OVS.Rollback.Core
             //    noGCActive = false;
             //}
 
-            // NEW: Calculate error from TARGET rift (not zero)
+            // NEW: Calculate error from TARGET rift (not zero), plus this player's offset (the P2P host's lag)
             // Positive error = client too far ahead, negative = client behind
-            float riftError = rawRift - config.RiftCalculation.TargetRift;
+            float riftError = rawRift - (config.RiftCalculation.TargetRift + player.TargetRiftOffset);
 
             algorithm.UpdateSmoothRift(player, riftError, config);
 
@@ -1678,6 +1679,22 @@ namespace OVS.Rollback.Core
             }
             uint serverFrame = match.CurrentFrame;
 
+            // ── Host clock offset: the slowest remote round trip decides how far behind the local game runs ──
+            float hostOffsetFrames = 0f;
+            short hostReportedPing = -1;
+            if (ServerConfiguration.Instance.RiftCalculation.HostClockOffset)
+            {
+                float slowest = 0f;
+                for (int p = 0; p < ws.PlayerCount; p++)
+                {
+                    var remote = ws.PlayerSnapshot[p].Value;
+                    if (remote.IsSpectator || remote.IsLocal || remote.Disconnected) continue;
+                    lock (remote.Lock) { if (remote.PingInitialized && remote.SmoothedPing > slowest) slowest = remote.SmoothedPing; }
+                }
+                hostOffsetFrames = -(slowest * 0.5f) / TargetFrameTime;
+                hostReportedPing = (short)Math.Min(slowest, 255f);
+            }
+
             // ── Rift + disconnect check ──
             for (int p = 0; p < ws.PlayerCount; p++)
             {
@@ -1688,6 +1705,11 @@ namespace OVS.Rollback.Core
                 }
                 lock (player.Lock)
                 {
+                    if (player.IsLocal)
+                    {
+                        player.TargetRiftOffset = hostOffsetFrames;
+                        player.PingOverride = hostReportedPing;
+                    }
                     CalcRiftVariableTick(player, serverFrame);
 
                     if (!player.Disconnected &&
@@ -1755,7 +1777,7 @@ namespace OVS.Rollback.Core
                     for (int i = 0; i < match.TeamSlotCount && i < recipient.AckedFrames.Count; i++)
                         ws.AckedFrames[i] = recipient.AckedFrames[i];
                     lastClientFrame = recipient.LastClientFrame;
-                    ping = recipient.Ping;
+                    ping = recipient.PingOverride >= 0 ? recipient.PingOverride : recipient.Ping;
                     reportedRift = recipient.ReportedRift;  // clamped, and after the algorithm's report step
                 }
 
