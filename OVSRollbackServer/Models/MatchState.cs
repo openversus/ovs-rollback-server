@@ -57,6 +57,9 @@ namespace OVS.Rollback.Models
         public int NumBots { get; set; }
         public HashSet<int> BotIndices { get; set; } = new();
 
+        // ── Every slot's input for every frame, when InputRecording is enabled (null otherwise) ──
+        public InputRecorder? Recorder { get; set; }
+
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];
 

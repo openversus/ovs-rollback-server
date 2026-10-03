@@ -216,6 +216,39 @@ namespace OVS.Rollback.Utils
             }
         }
 
+        public string InputRecordingURL { get => BaseUrl + Endpoints.OVSMatchInputs; }
+
+        /// <summary>
+        /// POSTs a match's input recording to /ovs_match_inputs (OVS mode only). Unlike the other calls,
+        /// no BodyAsBase64 header: the body is tens of kilobytes, past what a proxy accepts in headers.
+        /// </summary>
+        protected internal async Task SendInputRecordingAsync(InputRecordingPayload recording)
+        {
+            if (!IsOVS)
+            {
+                return;
+            }
+
+            try
+            {
+                string json = JsonSerializer.Serialize(recording, OVSJsonContext.Default.InputRecordingPayload);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                content.Headers.Add("MatchUpdateKey", parsedMatchUpdateKey);
+                using var response = await _httpClient.PostAsync(InputRecordingURL, content);
+                uint frames = 0;
+                foreach (var player in recording.Players)
+                {
+                    frames = Math.Max(frames, player.Frames);
+                }
+
+                Log.InputRecordingSent(_logger, recording.MatchId, recording.Players.Count, frames, recording.DroppedInputs, recording.EndedBy, InputRecordingURL, (int)response.StatusCode);
+            }
+            catch (Exception ex)
+            {
+                Log.InputRecordingFailed(_logger, recording.MatchId, InputRecordingURL, ex);
+            }
+        }
+
         protected internal async Task<MatchStatusResponse?> SendMatchStatus(StatusEventArgs matchStatus)
         {
             var payload = matchStatus.StatusObject;

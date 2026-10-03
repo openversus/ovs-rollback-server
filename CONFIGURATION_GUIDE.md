@@ -86,6 +86,10 @@ The OVS Rollback Server now supports a comprehensive configuration system with:
     "EnableDebugLogs": false,
     "LogTickPerformance": true,
     "TickPerformanceInterval": 500
+  },
+  "InputRecording": {
+    "Enabled": false,
+    "ExtraFrames": 600
   }
 }
 ```
@@ -382,6 +386,17 @@ correction law against production logs (details in the reverse-engineering archi
 | `EnableDebugLogs` | bool | false | Enable verbose debug logging |
 | `LogTickPerformance` | bool | true | Log tick performance metrics |
 | `TickPerformanceInterval` | int | 500 | Log performance every N ticks |
+
+### Input Recording Settings
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `Enabled` | bool | false | Record every player's input for every frame, and POST the recording to the OVS server's `/ovs_match_inputs` when the match ends (or the server shuts down with the match still running: a partial recording, `endedBy` "Shutdown"). OVS mode only. Recorded on the UDP receive path, never on the tick loop |
+| `ExtraFrames` | uint | 600 | Frames recorded past `match_duration`; inputs for later frames are only counted (`droppedInputs`) |
+
+The recording is one entry per player slot: one little-endian uint32 per frame, gzipped, base64 in the JSON
+(`encoding` "u32le-gzip"), from frame 0 to the highest frame received; frames never received are 0 there and listed
+in `missing` as inclusive `[from, to]` ranges. The POST carries the `MatchUpdateKey` header but, unlike the other
+calls, no `BodyAsBase64` header (the body is too large for a header).
 
 ---
 

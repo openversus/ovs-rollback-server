@@ -143,6 +143,14 @@ namespace OVS.Rollback.Core
                 Message = "{callerName}: Failed to POST end-match to {Url}, exception: ")]
             public static partial void EndMatchFailed(ILogger logger, string url, Exception exception, [CallerMemberName] string callerName = "");
 
+            [LoggerMessage(EventId = 3008, Level = LogLevel.Error,
+                Message = "{callerName}: Failed to POST the input recording of Match ID {matchId} to {Url}, exception: ")]
+            public static partial void InputRecordingFailed(ILogger logger, string matchId, string url, Exception exception, [CallerMemberName] string callerName = "");
+
+            [LoggerMessage(EventId = 1104, Level = LogLevel.Information,
+                Message = "{callerName}: Sent the input recording of Match ID {matchId} ({players} player(s), {frames} frame(s), {droppedInputs} dropped, ended by {endedBy}) to {url}: HTTP {status}")]
+            public static partial void InputRecordingSent(ILogger logger, string matchId, int players, uint frames, long droppedInputs, string endedBy, string url, int status, [CallerMemberName] string callerName = "");
+
             [LoggerMessage(EventId = 3006, Level = LogLevel.Error,
                 Message = "{callerName}: Invalid JSON from {Path}")]
             public static partial void InvalidJson(ILogger logger, string path, Exception exception, [CallerMemberName] string callerName = "");

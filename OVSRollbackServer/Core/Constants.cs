@@ -39,6 +39,7 @@ namespace OVS.Rollback.Core
             internal const string OVSMatchStatus = "/api/ovs_match_status";
             internal const string MVSIRegister = "/mvsi_register";
             internal const string MVSIEndMatch = "/mvsi_end_match";
+            internal const string OVSMatchInputs = "/ovs_match_inputs";
         }
     }
 }

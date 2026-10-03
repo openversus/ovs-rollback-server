@@ -32,6 +32,7 @@ namespace OVS.Rollback.Configuration
         public InputValidationSettings InputValidation { get; set; } = new();
         public DesyncDetectionSettings DesyncDetection { get; set; } = new();
         public LoggingSettings Logging { get; set; } = new();
+        public InputRecordingSettings InputRecording { get; set; } = new();
 
         /// <summary>
         /// Singleton instance with thread-safe access
@@ -164,7 +165,8 @@ namespace OVS.Rollback.Configuration
             PingPhaseSettings _pingPhaseSettings,
             InputValidationSettings _inputValidationSettings,
             DesyncDetectionSettings _desyncDetectionSettings,
-            LoggingSettings _loggingSettings
+            LoggingSettings _loggingSettings,
+            InputRecordingSettings _inputRecordingSettings
             )
         {
             _logger = logger;
@@ -177,6 +179,7 @@ namespace OVS.Rollback.Configuration
             InputValidation = _inputValidationSettings;
             DesyncDetection = _desyncDetectionSettings;
             Logging = _loggingSettings;
+            InputRecording = _inputRecordingSettings;
         }
         private static ServerConfiguration BootStrapEnvVariables()
         {
@@ -190,6 +193,7 @@ namespace OVS.Rollback.Configuration
             InputValidationSettings inputValidationSettings = new InputValidationSettings();
             DesyncDetectionSettings desyncDetectionSettings = new DesyncDetectionSettings();
             LoggingSettings loggingSettings = new LoggingSettings();
+            InputRecordingSettings inputRecordingSettings = new InputRecordingSettings();
 
 
             // Server settings
@@ -272,6 +276,10 @@ namespace OVS.Rollback.Configuration
             loggingSettings.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", loggingSettings.LogTickPerformance);
             loggingSettings.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", loggingSettings.TickPerformanceInterval);
 
+            // Input recording settings
+            inputRecordingSettings.Enabled = GetEnvBool("InputRecording__Enabled", inputRecordingSettings.Enabled);
+            inputRecordingSettings.ExtraFrames = GetEnvUInt("InputRecording__ExtraFrames", inputRecordingSettings.ExtraFrames);
+
             return new ServerConfiguration(
                 logger,
                 serverSettings,
@@ -282,7 +290,8 @@ namespace OVS.Rollback.Configuration
                 pingPhaseSettings,
                 inputValidationSettings,
                 desyncDetectionSettings,
-                loggingSettings
+                loggingSettings,
+                inputRecordingSettings
                 );
         }
 
@@ -369,6 +378,10 @@ namespace OVS.Rollback.Configuration
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
+
+            // Input recording settings
+            InputRecording.Enabled = GetEnvBool("InputRecording__Enabled", InputRecording.Enabled);
+            InputRecording.ExtraFrames = GetEnvUInt("InputRecording__ExtraFrames", InputRecording.ExtraFrames);
 
             _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
@@ -544,5 +557,22 @@ namespace OVS.Rollback.Configuration
         public bool EnableDebugLogs { get; set; } = false;
         public bool LogTickPerformance { get; set; } = true;
         public int TickPerformanceInterval { get; set; } = 500;
+    }
+
+    public class InputRecordingSettings
+    {
+        /// <summary>
+        /// When true, every player's input for every frame of the match is recorded and,
+        /// when the match ends (or the server shuts down with a match still running), posted
+        /// to the OVS server's /ovs_match_inputs, which stores it (one document per player
+        /// per match). Recording happens on the UDP receive path, never on the tick loop.
+        /// </summary>
+        public bool Enabled { get; set; } = false;
+        /// <summary>
+        /// Frames recorded past the match's configured duration (the wall-clock frame can run
+        /// past it). Inputs for frames beyond DurationInFrames + ExtraFrames are not recorded,
+        /// only counted.
+        /// </summary>
+        public uint ExtraFrames { get; set; } = 600;
     }
 }

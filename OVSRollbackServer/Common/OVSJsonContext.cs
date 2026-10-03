@@ -32,6 +32,7 @@ namespace OVS.Rollback.Common
     [JsonSerializable(typeof(MatchStatus))]
     [JsonSerializable(typeof(ITimeObject))]
     [JsonSerializable(typeof(NewConnectionPayload))]
+    [JsonSerializable(typeof(InputRecordingPayload))]
     public partial class OVSJsonContext : JsonSerializerContext
     {
     }

@@ -42,6 +42,7 @@ namespace OVS.Rollback.Core
         private readonly ConcurrentDictionary<string, MatchState> _matches = new();
         private readonly ConcurrentDictionary<string, PlayerInfo> _players = new();
         private readonly SemaphoreSlim _matchCreationLock = new(1, 1);
+        private readonly ConcurrentBag<Task> _inputRecordingSends = new();
         private OVSMatchConfig? matchConfig = default;
         private ConcurrentBag<string> connections = new();
 
@@ -157,6 +158,22 @@ namespace OVS.Rollback.Core
             if (!_running) return;
             _running = false;
 
+            // A match still running (MementoMori, SIGINT, a terminating error) keeps its partial
+            // recording; then every recording still being sent is waited for (the HTTP timeout bounds it).
+            foreach (MatchState runningMatch in _matches.Values)
+            {
+                SendInputRecording(runningMatch, "Shutdown");
+            }
+
+            try
+            {
+                await Task.WhenAll(_inputRecordingSends);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Waiting for the input recordings to be sent failed");
+            }
+
             try
             {
                 _socket.Shutdown(SocketShutdown.Both);
@@ -190,6 +207,30 @@ namespace OVS.Rollback.Core
             _socket.Dispose();
             _httpClient.Dispose();
             _matchCreationLock.Dispose();
+        }
+
+        /// <summary>
+        /// Sends the match's input recording (InputRecording settings) off the calling thread, once
+        /// per match; a match without a recorder, or already sent, sends nothing.
+        /// </summary>
+        private void SendInputRecording(MatchState match, string endedBy)
+        {
+            InputRecorder? recorder = match.Recorder;
+            if (null == recorder || recorder.Taken)
+            {
+                return;
+            }
+
+            string matchId = match.MatchId;
+            string key = match.Key;
+            _inputRecordingSends.Add(Task.Run(async () =>
+            {
+                InputRecordingPayload? payload = recorder.TryTakePayload(matchId, key, endedBy);
+                if (null != payload)
+                {
+                    await _httpHelper.SendInputRecordingAsync(payload);
+                }
+            }));
         }
 
         // ═══════════════════════════════════════════
@@ -490,6 +531,12 @@ namespace OVS.Rollback.Core
                             config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
                         )
                     };
+
+                    InputRecordingSettings recording = ServerConfiguration.Instance.InputRecording;
+                    if (recording.Enabled)
+                    {
+                        match.Recorder = new InputRecorder(config, match.TeamSlotCount, recording.ExtraFrames);
+                    }
 
                     if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
                     {
@@ -959,13 +1006,16 @@ namespace OVS.Rollback.Core
                     "Input from PlayerIndex {Idx} but match.Inputs has {Size} slots " +
                     "(MatchId {MatchId}, IsSpectator {Spec}); dropping input.",
                     playerIdx, match.Inputs.Count, match.MatchId, player.IsSpectator);
+                match.Recorder?.CountDropped(Math.Min(payload.NumFrames, payload.InputPerFrame.Count));
                 return;
             }
             var histMap = match.Inputs[playerIdx];
+            InputRecorder? recorder = match.Recorder;
             for (byte i = 0; i < payload.NumFrames && i < payload.InputPerFrame.Count; i++)
             {
                 uint f = payload.StartFrame + i;
                 histMap.TryAdd(f, payload.InputPerFrame[i]);
+                recorder?.Record(playerIdx, f, payload.InputPerFrame[i]);
             }
 
             // ── Buffer per-frame checksums sent by this client ──
@@ -1476,6 +1526,7 @@ namespace OVS.Rollback.Core
                 if (allDisconnected && match.Players.Count > 0)
                 {
                     _ = _httpHelper.SendEndMatchAsync(match.MatchId, match.Key);
+                    SendInputRecording(match, "AllPlayersDisconnected");
                     match.StopTick();
 
                     _ = Events.SendAllPlayersDisconnectedEvent(this, StatusEventArgs.CreateNew(
