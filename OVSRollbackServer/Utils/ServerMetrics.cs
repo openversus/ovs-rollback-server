@@ -46,8 +46,6 @@ namespace OVS.Rollback.Utils
             s_meter.CreateCounter<long>("rollback.input.misses");
         public static readonly Counter<long> InputPredictions =
             s_meter.CreateCounter<long>("rollback.input.predictions");
-        public static readonly Counter<long> BitPackFallbacks =
-                s_meter.CreateCounter<long>("rollback.bitpack.fallbacks");
 
         // ── Input validation & security ──
         public static readonly Counter<long> InputsRateLimited =
@@ -64,6 +62,8 @@ namespace OVS.Rollback.Utils
             s_meter.CreateCounter<long>("rollback.desyncs.detected");
         public static readonly Counter<long> ChecksumsProcessed =
             s_meter.CreateCounter<long>("rollback.checksums.processed");
+        public static readonly Counter<long> MatchResultDisagreements =
+            s_meter.CreateCounter<long>("rollback.matchresult.disagreements");
 
         // ── Match lifecycle ──
         public static readonly Counter<long> MatchesStarted =

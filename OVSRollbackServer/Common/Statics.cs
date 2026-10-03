@@ -40,6 +40,11 @@ namespace OVS.Rollback.Common
         // Is the default production value/format during build
         public static string OVSRollbackVersion { get; } = "1.0.0-default-version";
 
+        // Experimental build label, replaced by build.sh when EXPERIMENTAL_BUILD is set. Left as the
+        // placeholder, the build is not experimental and nothing is logged.
+        public static string ExperimentalBuild { get; } = "DefaultExperimentalBuild";
+        public static bool IsExperimentalBuild => ExperimentalBuild != "DefaultExperimentalBuild";
+
         internal static bool ShouldMoveLogfile { get => FinalLogFile.NotNullOrWhiteSpace; }
 
         /// <summary>
