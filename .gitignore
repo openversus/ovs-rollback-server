@@ -429,6 +429,7 @@ FodyWeavers.xsd
 *.msp
 
 # Cruft
+/local/
 /.codegraph/
 /graphify-out/
 
