@@ -356,7 +356,7 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.HysteresisExit = GetEnvFloat("RiftCalculation__HysteresisExit", RiftCalculation.HysteresisExit);
             RiftCalculation.SmallErrorAlpha = GetEnvFloat("RiftCalculation__SmallErrorAlpha", RiftCalculation.SmallErrorAlpha);
             RiftCalculation.SmallErrorBelow = GetEnvFloat("RiftCalculation__SmallErrorBelow", RiftCalculation.SmallErrorBelow);
-            RiftCalculation.HostClockOffset = GetEnvBool("RiftCalculation__HostClockOffset", RiftCalculation.HostClockOffset);
+            RiftCalculation.HostPingParity = GetEnvBool("RiftCalculation__HostPingParity", RiftCalculation.HostPingParity);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -384,6 +384,7 @@ namespace OVS.Rollback.Configuration
             Logging.EnableDebugLogs = GetEnvBool("Logging__EnableDebugLogs", Logging.EnableDebugLogs);
             Logging.LogTickPerformance = GetEnvBool("Logging__LogTickPerformance", Logging.LogTickPerformance);
             Logging.TickPerformanceInterval = GetEnvInt("Logging__TickPerformanceInterval", Logging.TickPerformanceInterval);
+            Logging.RiftReportEveryFrames = GetEnvUInt("Logging__RiftReportEveryFrames", Logging.RiftReportEveryFrames);
 
             _logger?.LogDebug("{LogPrefix} Environment variables applied to configuration", LogPrefix);
         }
@@ -555,11 +556,14 @@ namespace OVS.Rollback.Configuration
         public float SmallErrorAlpha { get; set; } = 0.2f;
         public float SmallErrorBelow { get; set; } = 3.0f;
         /// <summary>
-        /// P2P host fairness. A game on the same machine as the engine (loopback) is steered to lag the engine's
-        /// clock by half the slowest remote player's round trip, and is told that round trip as its ping, so both
-        /// sides see each other's inputs half a round trip late and raise input delay alike. Off for a relay.
+        /// P2P host fairness. A game on the same machine as the engine (loopback) is told the slowest remote
+        /// player's round trip as its ping, so it raises its input delay as far as they do. The games' clocks are
+        /// already aligned by the rift (the half-ping term in the rift only undoes the staleness of a remote
+        /// client's reported frame); measured 2026-10-03 at 80 and 160 ms round trips: with equal input delay both
+        /// sides hold the other's inputs the same number of frames ahead, and shifting the host's clock as well
+        /// made it worse by half the round trip. Off for a relay.
         /// </summary>
-        public bool HostClockOffset { get; set; } = false;
+        public bool HostPingParity { get; set; } = false;
     }
 
     public class PingPhaseSettings
@@ -600,5 +604,10 @@ namespace OVS.Rollback.Configuration
         public bool EnableDebugLogs { get; set; } = false;
         public bool LogTickPerformance { get; set; } = true;
         public int TickPerformanceInterval { get; set; } = 500;
+        /// <summary>
+        /// Every N server frames, log each player's clock against the engine's: raw rift, smoothed rift, the
+        /// reported rift and ping, and the frames. 0 (the default) logs nothing; a bench node sets 300.
+        /// </summary>
+        public uint RiftReportEveryFrames { get; set; } = 0;
     }
 }

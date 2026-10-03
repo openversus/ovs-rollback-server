@@ -31,9 +31,9 @@ namespace OVS.Rollback.Node
             {
                 logger.LogWarning("Node.Rendezvous is not set: every match will go to a relay (the server's, or Node.RelayFallback).");
             }
-            if (config.RiftCalculation.HostClockOffset)
+            if (config.RiftCalculation.HostPingParity)
             {
-                logger.LogInformation("Host clock offset on: this machine's game is paced half the slowest remote round trip behind the engine");
+                logger.LogInformation("Host ping parity on: this machine's game is told the slowest remote round trip as its ping, so its input delay matches");
             }
 
             using var cts = new CancellationTokenSource();

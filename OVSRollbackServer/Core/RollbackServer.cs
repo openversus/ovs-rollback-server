@@ -1351,8 +1351,8 @@ namespace OVS.Rollback.Core
             if (!player.RiftInit)
             {
                 player.RiftInit = true;
-                // NEW: Initialize with bias toward target rift (plus this player's offset, the P2P host's lag)
-                float initialError = rawRift - (config.RiftCalculation.TargetRift + player.TargetRiftOffset);
+                // NEW: Initialize with bias toward target rift
+                float initialError = rawRift - config.RiftCalculation.TargetRift;
                 // Clamped like every later value: an unclamped first measurement of a client that
                 // joined far behind could exceed 50, which the client treats as unrecoverable.
                 player.SmoothRift = RiftClamp.Apply(initialError, initialError, config.RiftCalculation);
@@ -1391,9 +1391,9 @@ namespace OVS.Rollback.Core
             //    noGCActive = false;
             //}
 
-            // NEW: Calculate error from TARGET rift (not zero), plus this player's offset (the P2P host's lag)
+            // NEW: Calculate error from TARGET rift (not zero)
             // Positive error = client too far ahead, negative = client behind
-            float riftError = rawRift - (config.RiftCalculation.TargetRift + player.TargetRiftOffset);
+            float riftError = rawRift - config.RiftCalculation.TargetRift;
 
             algorithm.UpdateSmoothRift(player, riftError, config);
 
@@ -1453,6 +1453,17 @@ namespace OVS.Rollback.Core
                 Log.RiftInfo(_logger,
                     player.MatchId, player.PlayerIndex, player.PlayerName, player.Ping, player.SmoothRift,
                     player.Rift, predictedClientFrame, serverFrame);
+            }
+
+            uint reportEvery = config.Logging.RiftReportEveryFrames;
+            if (reportEvery > 0 && serverFrame % reportEvery == 0)
+            {
+                _logger.LogInformation(
+                    "RiftReport match {MatchId} player {Index}{Local}: server frame {ServerFrame}, client frame {ClientFrame} (predicted now {Predicted:F1}), " +
+                    "raw rift {Raw:F2}, smooth {Smooth:F2}, reported {Reported:F2}, ping {Ping} ms (smoothed {Smoothed:F0}, told {Told})",
+                    player.MatchId, player.PlayerIndex, player.IsLocal ? " (local)" : "", serverFrame, player.LastClientFrame, predictedClientFrame,
+                    rawRift, player.SmoothRift, player.ReportedRift, player.Ping, player.SmoothedPing,
+                    player.PingOverride >= 0 ? player.PingOverride : player.Ping);
             }
 
             //if (noGCActive && GCSettings.LatencyMode == GCLatencyMode.NoGCRegion)
@@ -1679,10 +1690,9 @@ namespace OVS.Rollback.Core
             }
             uint serverFrame = match.CurrentFrame;
 
-            // ── Host clock offset: the slowest remote round trip decides how far behind the local game runs ──
-            float hostOffsetFrames = 0f;
+            // ── Host ping parity: the local game is told the slowest remote round trip, so its input delay matches ──
             short hostReportedPing = -1;
-            if (ServerConfiguration.Instance.RiftCalculation.HostClockOffset)
+            if (ServerConfiguration.Instance.RiftCalculation.HostPingParity)
             {
                 float slowest = 0f;
                 for (int p = 0; p < ws.PlayerCount; p++)
@@ -1691,7 +1701,6 @@ namespace OVS.Rollback.Core
                     if (remote.IsSpectator || remote.IsLocal || remote.Disconnected) continue;
                     lock (remote.Lock) { if (remote.PingInitialized && remote.SmoothedPing > slowest) slowest = remote.SmoothedPing; }
                 }
-                hostOffsetFrames = -(slowest * 0.5f) / TargetFrameTime;
                 hostReportedPing = (short)Math.Min(slowest, 255f);
             }
 
@@ -1707,7 +1716,6 @@ namespace OVS.Rollback.Core
                 {
                     if (player.IsLocal)
                     {
-                        player.TargetRiftOffset = hostOffsetFrames;
                         player.PingOverride = hostReportedPing;
                     }
                     CalcRiftVariableTick(player, serverFrame);
