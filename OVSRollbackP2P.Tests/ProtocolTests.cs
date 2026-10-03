@@ -56,6 +56,31 @@ public class ProtocolTests
         Assert.Empty(back.Peers[1].LocalCandidates);
     }
 
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(1UL)]
+    [InlineData(0x8000_0000_0000_0000UL)]
+    [InlineData(ulong.MaxValue)]
+    public void Parent_round_trips(ulong token)
+    {
+        var bytes = P2PProtocol.Encode(new ParentMessage(token));
+        Assert.True(P2PProtocol.IsP2P(bytes));
+        Assert.Equal(P2PMessageKind.Parent, P2PProtocol.KindOf(bytes));
+        Assert.Equal(P2PProtocol.HeaderLength + 8, bytes.Length);
+        var back = P2PProtocol.DecodeParent(bytes);
+        Assert.NotNull(back);
+        Assert.Equal(token, back.Token);
+    }
+
+    [Fact]
+    public void Parent_decoder_rejects_other_kinds_and_a_short_body()
+    {
+        Assert.Null(P2PProtocol.DecodeParent(P2PProtocol.Encode(new KeepAliveMessage(7, 1))));
+        var bytes = P2PProtocol.Encode(new ParentMessage(42));
+        Assert.Null(P2PProtocol.DecodeParent(bytes.AsSpan(0, bytes.Length - 1)));
+        Assert.Null(P2PProtocol.DecodeKeepAlive(bytes));
+    }
+
     [Fact]
     public void Peers_rejection_and_no_relay_round_trip()
     {

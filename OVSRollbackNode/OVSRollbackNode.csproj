@@ -13,6 +13,9 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredPGO>true</TieredPGO>
     <PublishReadyToRun>true</PublishReadyToRun>
+    <!-- No ICU: the node formats nothing for a person, and a self-contained build without this needs libicu on the
+         player's machine, which Steam's Linux runtime container is not known to provide. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../OVSRollbackServer/OVSRollbackServer.csproj" />

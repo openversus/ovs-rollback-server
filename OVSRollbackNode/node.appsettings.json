@@ -23,7 +23,10 @@
     "RegisterIntervalMilliseconds": 500,
     "KeepAliveIntervalMilliseconds": 1000,
     "PeerTimeoutSeconds": 30,
-    "GameTimeoutSeconds": 60
+    "GameTimeoutSeconds": 60,
+    "PortFile": "",
+    "ParentToken": "",
+    "ParentTimeoutSeconds": 10
   },
 
   "Performance": {

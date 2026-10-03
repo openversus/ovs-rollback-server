@@ -17,7 +17,9 @@ namespace OVS.Rollback.P2P
         Peers = 2,
         Probe = 3,
         ProbeAck = 4,
-        KeepAlive = 5
+        KeepAlive = 5,
+        /// <summary>From the process that started the node (the OpenVersus mod, over loopback): "I am still here".</summary>
+        Parent = 6
     }
 
     /// <summary>One address a peer may be reached at: its public mapping as the rendezvous saw it, or a LAN address.</summary>
@@ -42,6 +44,12 @@ namespace OVS.Rollback.P2P
     public sealed record ProbeMessage(ulong MatchHash, ushort FromIndex, ushort ToIndex, uint Sequence);
 
     public sealed record KeepAliveMessage(ulong MatchHash, ushort FromIndex);
+
+    /// <summary>
+    /// The parent process's keepalive. The token is the one the node was started with (Node.ParentToken), so a
+    /// stray datagram cannot keep a node alive after the game it belonged to is gone.
+    /// </summary>
+    public sealed record ParentMessage(ulong Token);
 
     public static class P2PProtocol
     {
@@ -124,6 +132,13 @@ namespace OVS.Rollback.P2P
             return w.ToArray();
         }
 
+        public static byte[] Encode(ParentMessage m)
+        {
+            var w = new Writer(P2PMessageKind.Parent);
+            w.U64(m.Token);
+            return w.ToArray();
+        }
+
         // ── Decoding: null for anything short or malformed ──
 
         public static RegisterMessage? DecodeRegister(ReadOnlySpan<byte> d)
@@ -163,6 +178,14 @@ namespace OVS.Rollback.P2P
             var r = new Reader(d[HeaderLength..]);
             if (!r.U64(out var hash) || !r.U16(out var from)) return null;
             return new KeepAliveMessage(hash, from);
+        }
+
+        public static ParentMessage? DecodeParent(ReadOnlySpan<byte> d)
+        {
+            if (!IsP2P(d) || KindOf(d) != P2PMessageKind.Parent) return null;
+            var r = new Reader(d[HeaderLength..]);
+            if (!r.U64(out var token)) return null;
+            return new ParentMessage(token);
         }
 
         // ── Primitives (little-endian; strings u16-length UTF-8; endpoints IPv4 + u16 port) ──

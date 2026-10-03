@@ -312,6 +312,9 @@ namespace OVS.Rollback.Configuration
             Node.KeepAliveIntervalMilliseconds = GetEnvInt("Node__KeepAliveIntervalMilliseconds", Node.KeepAliveIntervalMilliseconds);
             Node.PeerTimeoutSeconds = GetEnvInt("Node__PeerTimeoutSeconds", Node.PeerTimeoutSeconds);
             Node.GameTimeoutSeconds = GetEnvInt("Node__GameTimeoutSeconds", Node.GameTimeoutSeconds);
+            Node.PortFile = GetEnvString("Node__PortFile", Node.PortFile) ?? "";
+            Node.ParentToken = GetEnvString("Node__ParentToken", Node.ParentToken) ?? "";
+            Node.ParentTimeoutSeconds = GetEnvInt("Node__ParentTimeoutSeconds", Node.ParentTimeoutSeconds);
             Server.VerboseLogging = GetEnvBool("Server__VerboseLogging", Server.VerboseLogging);
             Server.MementoMori = GetEnvBool("Server__MementoMori", Server.MementoMori);
 
@@ -484,6 +487,19 @@ namespace OVS.Rollback.Configuration
         public int PeerTimeoutSeconds { get; set; } = 30;
         /// <summary>Seconds without anything from the local game before the node forgets the match and waits for the next.</summary>
         public int GameTimeoutSeconds { get; set; } = 60;
+        /// <summary>
+        /// A file to write the UDP port the node actually listens on (one line, the number), once bound. The mod
+        /// that starts the node reads it and reports the port to the server. Empty writes nothing.
+        /// </summary>
+        public string PortFile { get; set; } = String.Empty;
+        /// <summary>
+        /// The watchdog token, a decimal unsigned 64-bit number. When set, the process that started the node must
+        /// send a Parent keepalive carrying it (P2P protocol, over loopback) at least every ParentTimeoutSeconds, or
+        /// the node exits: a game that crashed takes its node with it. Empty means no watchdog.
+        /// </summary>
+        public string ParentToken { get; set; } = String.Empty;
+        /// <summary>Seconds without a Parent keepalive before the node exits (when ParentToken is set).</summary>
+        public int ParentTimeoutSeconds { get; set; } = 10;
     }
 
     public class PerformanceSettings

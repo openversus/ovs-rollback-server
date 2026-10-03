@@ -78,6 +78,11 @@ namespace OVS.Rollback.Node
         private readonly byte[] _buffer = new byte[2048];
         private Session? _session;
         private IReadOnlyList<IPEndPoint> _localCandidates = [];
+        /// <summary>The watchdog token the parent's keepalives must carry; null when there is no watchdog.</summary>
+        private readonly ulong? _parentToken;
+        private TimeSpan _lastParent;
+        /// <summary>Set when the node decides to stop (the parent is gone); the loop ends and RunAsync returns.</summary>
+        private string? _stopReason;
 
         public Node(ILogger logger, ServerConfiguration config, ushort port)
         {
@@ -96,10 +101,20 @@ namespace OVS.Rollback.Node
                 _log.LogError("Node.Rendezvous {Value} does not resolve; P2P is off until it does", _settings.Rendezvous);
             if (!string.IsNullOrWhiteSpace(_settings.RelayFallback) && _relay is null)
                 _log.LogError("Node.RelayFallback {Value} does not resolve; there is no fallback", _settings.RelayFallback);
+            if (!string.IsNullOrWhiteSpace(_settings.ParentToken))
+            {
+                // A token that cannot be read is a misconfiguration, not "no watchdog": a node that outlives its
+                // game is the failure the watchdog exists for, so refuse to start rather than run without it.
+                if (!ulong.TryParse(_settings.ParentToken.Trim(), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var token))
+                    throw new ArgumentException($"Node.ParentToken \"{_settings.ParentToken}\" is not an unsigned 64-bit number");
+                _parentToken = token;
+                _lastParent = _clock.Elapsed;
+            }
 
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             UdpSockets.IgnoreConnectionReset(_socket);
             SocketConfigurator.ConfigureForLowLatency(_socket, _log);
+            // Port 0 asks for any free port (the mod reports the one taken through Node.PortFile and /identify).
             try
             {
                 _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
@@ -107,12 +122,13 @@ namespace OVS.Rollback.Node
             catch (SocketException e) when (e.SocketErrorCode == SocketError.AddressAlreadyInUse)
             {
                 // The fixed port is taken: take any free one. The rendezvous and the relay only ever see the
-                // public mapping, so the port is nobody's business but the game's, which is told the fixed one by
-                // the server until the client reports its port at /identify (not built yet).
+                // public mapping, so the port is nobody's business but the game's, which is told what the client
+                // reported at /identify (from Node.PortFile), or the fixed port by a client that reports none.
                 _socket.Bind(new IPEndPoint(IPAddress.Any, 0));
-                _port = (ushort)((IPEndPoint)_socket.LocalEndPoint!).Port;
-                _log.LogWarning("UDP {Fixed} is in use; listening on {Port} instead. The game is still told the fixed port, so this node will not be found until the client reports its port.", port, _port);
+                _log.LogWarning("UDP {Fixed} is in use; listening on {Port} instead. A client that does not report its node's port will not find this node.",
+                    port, ((IPEndPoint)_socket.LocalEndPoint!).Port);
             }
+            _port = (ushort)((IPEndPoint)_socket.LocalEndPoint!).Port;
             _engine = new RollbackServer(Utilities.NewLogger<RollbackServer>(), _socket, config.Server.MaxPlayers);
             // The server tells the cloud a match started through its authenticated status events; a node has no
             // such key, so it posts the key-checked route the TS server has for this instead.
@@ -126,15 +142,50 @@ namespace OVS.Rollback.Node
             _log.LogInformation("Node listening on UDP {Port}; rendezvous {Rendezvous}; relay {Relay}; LAN candidates: {Lan}",
                 _port, _rendezvous?.ToString() ?? "none", _relay?.ToString() ?? "none", string.Join(", ", _localCandidates));
             _log.LogInformation("Waiting for the game to connect to 127.0.0.1:{Port}", _port);
+            if (_parentToken is not null)
+            {
+                _log.LogInformation("Watchdog on: exiting after {Seconds} s without the parent's keepalive", ParentTimeout.TotalSeconds);
+            }
+            WritePortFile();
 
             await Task.Factory.StartNew(() => Loop(ct), ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            if (_stopReason is not null)
+            {
+                _log.LogInformation("Node stopping: {Reason}", _stopReason);
+            }
+        }
+
+        private TimeSpan ParentTimeout => TimeSpan.FromSeconds(Math.Max(2, _settings.ParentTimeoutSeconds));
+
+        /// <summary>
+        /// Writes the bound port to Node.PortFile, whole or not at all (written beside it, then renamed over it),
+        /// so a reader never sees a half-written number. A failure is logged and the node runs on: the mod then
+        /// reports no port, and the server names the fixed one.
+        /// </summary>
+        private void WritePortFile()
+        {
+            if (string.IsNullOrWhiteSpace(_settings.PortFile)) return;
+            string path = Path.GetFullPath(_settings.PortFile);
+            string temp = path + ".tmp";
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(temp, _port.ToString(System.Globalization.CultureInfo.InvariantCulture) + "\n");
+                File.Move(temp, path, overwrite: true);
+                _log.LogInformation("Port {Port} written to {Path}", _port, path);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                _log.LogError("Could not write the port file {Path}: {Error}", path, e.Message);
+                try { File.Delete(temp); } catch (Exception) { }
+            }
         }
 
         private void Loop(CancellationToken ct)
         {
             var any = new IPEndPoint(IPAddress.Any, 0);
             EndPoint from = any;
-            while (!ct.IsCancellationRequested)
+            while (!ct.IsCancellationRequested && _stopReason is null)
             {
                 // Poll instead of a receive timeout: no exception per idle interval.
                 if (_socket.Poll(10_000, SelectMode.SelectRead))
@@ -310,6 +361,14 @@ namespace OVS.Rollback.Node
                 case P2PMessageKind.Register:
                     // Only the rendezvous receives these.
                     break;
+
+                case P2PMessageKind.Parent:
+                    // Only from this machine, and only with this launch's token: anything else is noise.
+                    if (_parentToken is { } expected && IPAddress.IsLoopback(from.Address) && P2PProtocol.DecodeParent(data) is { } parent && parent.Token == expected)
+                    {
+                        _lastParent = now;
+                    }
+                    break;
             }
         }
 
@@ -330,6 +389,12 @@ namespace OVS.Rollback.Node
 
         private void Tick(TimeSpan now)
         {
+            if (_parentToken is not null && now - _lastParent > ParentTimeout)
+            {
+                _stopReason = $"nothing from the parent process for {ParentTimeout.TotalSeconds:F0} s; the game is gone";
+                return;
+            }
+
             var s = _session;
             if (s is null) return;
 

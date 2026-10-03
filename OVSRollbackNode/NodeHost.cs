@@ -18,7 +18,11 @@ namespace OVS.Rollback.Node
             string settingsPath = Path.Combine(AppContext.BaseDirectory, "node.appsettings.json");
             ServerConfiguration.Initialize(logger, settingsPath);
             var config = Singletons.Config;
-            logger.LogInformation("Node settings from {Path}: rendezvous '{Rendezvous}', relay '{Relay}', base URL {BaseUrl}",
+            if (!ApplyOptions(args, config, logger))
+            {
+                return 2;
+            }
+            logger.LogInformation("Node settings from {Path} and the command line: rendezvous '{Rendezvous}', relay '{Relay}', base URL {BaseUrl}",
                 settingsPath, config.Node.Rendezvous, config.Node.RelayFallback, config.Server.BaseUrl);
             ushort port = Singletons.PortSetOnCommandLine ? Singletons.Port : config.Server.Port;
 
@@ -36,7 +40,9 @@ namespace OVS.Rollback.Node
                 logger.LogInformation("Host ping parity on: this machine's game is told the slowest remote round trip as its ping, so its input delay matches");
             }
 
-            using var cts = new CancellationTokenSource();
+            // Not disposed: ProcessExit below runs after this method has returned, and Cancel on a disposed source
+            // throws, which turned every clean exit into an abort (seen 2026-10-03, exit code 134).
+            var cts = new CancellationTokenSource();
             // The engine's hosting container registers a console lifetime that marks SIGTERM and SIGINT as handled
             // and then does nothing with them (its host is never run), which would leave the node immune to a plain
             // kill. Own registrations run too, and these end the loop.
@@ -44,9 +50,11 @@ namespace OVS.Rollback.Node
             using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; cts.Cancel(); });
             AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
-            await using var node = new Node(logger, config, port);
             try
             {
+                // Construction binds the socket and reads the watchdog token; either can refuse, and that is an error
+                // to log like any other, not an unhandled exception.
+                await using var node = new Node(logger, config, port);
                 await node.RunAsync(cts.Token);
             }
             catch (Exception e)
@@ -59,6 +67,55 @@ namespace OVS.Rollback.Node
                 Serilog.Log.CloseAndFlush();
             }
             return 0;
+        }
+
+        /// <summary>
+        /// The "--option value" pairs after the positional port (see Program.cs), applied over the loaded settings.
+        /// False, with the problem logged, for an option that is unknown, has no value, or has one that does not parse.
+        /// </summary>
+        internal static bool ApplyOptions(string[] args, ServerConfiguration config, ILogger logger)
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                string name = args[i];
+                if (!name.StartsWith("--", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+                if (i + 1 >= args.Length || args[i + 1].StartsWith("--", StringComparison.Ordinal))
+                {
+                    logger.LogError("Option {Option} needs a value", name);
+                    return false;
+                }
+                string value = args[++i];
+                switch (name)
+                {
+                    case "--port-file":
+                        config.Node.PortFile = value;
+                        break;
+                    case "--parent-token":
+                        config.Node.ParentToken = value;
+                        break;
+                    case "--parent-timeout":
+                        if (!int.TryParse(value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int seconds) || seconds <= 0)
+                        {
+                            logger.LogError("--parent-timeout needs a positive number of seconds, not {Value}", value);
+                            return false;
+                        }
+                        config.Node.ParentTimeoutSeconds = seconds;
+                        break;
+                    case "--server":
+                        config.Server.BaseUrl = value;
+                        break;
+                    case "--rendezvous":
+                        config.Node.Rendezvous = value;
+                        break;
+                    default:
+                        logger.LogError("Unknown option {Option}", name);
+                        return false;
+                }
+            }
+            return true;
         }
     }
 }

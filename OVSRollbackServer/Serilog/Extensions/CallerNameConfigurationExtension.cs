@@ -17,9 +17,8 @@ namespace Serilog
             {
                 if (enrichmentConfiguration == null)
                 {
-                    string assmLocation = Assembly.GetExecutingAssembly().Location;
-                    string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
-                    string basePath = assmLocation.Replace(manifestName, "");
+                    // AppContext.BaseDirectory: Assembly.Location is empty in a single-file publish (see DIContainer).
+                    string basePath = AppContext.BaseDirectory;
 
                     var config = new ConfigurationBuilder()
                         .SetBasePath(basePath)

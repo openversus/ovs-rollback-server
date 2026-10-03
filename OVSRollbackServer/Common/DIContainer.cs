@@ -202,9 +202,9 @@ namespace OVS.Rollback.Common
         /// configuration providers.</returns>
         private IHostBuilder BuildAppHost()
         {
-            string assmLocation = Assembly.GetExecutingAssembly().Location;
-            string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
-            string basePath = assmLocation.Replace(manifestName, "");
+            // AppContext.BaseDirectory, not Assembly.Location: in a single-file publish (the P2P node for players) the
+            // location is empty, and SetBasePath("") throws before anything is logged (seen 2026-10-03).
+            string basePath = AppContext.BaseDirectory;
 
             IHostBuilder hostBuilder = Host.CreateDefaultBuilder()
                 .ConfigureAppConfiguration(c =>
@@ -282,9 +282,9 @@ namespace OVS.Rollback.Common
             // Force Utilities ModuleInitializer to run to ensure LogPath is set before logger configuration
             _ = Utilities.LogPath;
 
-            string assmLocation = Assembly.GetExecutingAssembly().Location;
-            string manifestName = Assembly.GetExecutingAssembly().ManifestModule.Name;
-            string basePath = assmLocation.Replace(manifestName, "");
+            // AppContext.BaseDirectory, not Assembly.Location: in a single-file publish (the P2P node for players) the
+            // location is empty, and SetBasePath("") throws before anything is logged (seen 2026-10-03).
+            string basePath = AppContext.BaseDirectory;
             ;
             var rootLoggerConfig = new ConfigurationBuilder()
                     .SetBasePath(basePath)
@@ -346,6 +346,14 @@ namespace OVS.Rollback.Common
         {
             string[] cmdLineArgsList = Environment.GetCommandLineArgs();
             RootLoggerInstance?.Information("{LogPrefix} Rollback server started with {Num} command line arguments: {Args}", LogPrefix, cmdLineArgsList.Length, cmdLineArgsList);
+
+            // From the first "--option" on, the arguments belong to the program hosting the engine (the P2P node's
+            // options); the positional port and max-players end there.
+            int firstOption = Array.FindIndex(cmdLineArgsList, a => a.StartsWith("--", StringComparison.Ordinal));
+            if (firstOption >= 0)
+            {
+                cmdLineArgsList = cmdLineArgsList[..firstOption];
+            }
 
             if (cmdLineArgsList.Length == 1)
             {
