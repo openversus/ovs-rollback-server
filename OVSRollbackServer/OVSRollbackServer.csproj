@@ -51,6 +51,11 @@
     <PackageReference Include="Serilog.Sinks.TextWriter" Version="3.0.0" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The P2P node hosts the engine in-process and the tests exercise it; both live in this solution. -->
+    <InternalsVisibleTo Include="OVS.Rollback.Node" />
+    <InternalsVisibleTo Include="OVS.Rollback.P2P.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

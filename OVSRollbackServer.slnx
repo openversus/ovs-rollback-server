@@ -6,4 +6,8 @@
     <Build />
   </Project>
   <Project Path="OVSRollbackServer/OVSRollbackServer.csproj" />
+  <Project Path="OVSRollbackP2P/OVSRollbackP2P.csproj" />
+  <Project Path="OVSRollbackNode/OVSRollbackNode.csproj" />
+  <Project Path="OVSRendezvous/OVSRendezvous.csproj" />
+  <Project Path="OVSRollbackP2P.Tests/OVSRollbackP2P.Tests.csproj" />
 </Solution>

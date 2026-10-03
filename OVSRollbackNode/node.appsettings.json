@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OVS Rollback Node Configuration",
+  "description": "The P2P node on a player's machine; NodeHost loads this file over the engine's appsettings.json beside it. Every section but Node is the engine's, as the server's appsettings.json has them; the differences: match events off (a player's machine holds no MatchUpdateKey), no MementoMori (the node lives as long as the game).",
+
+  "Server": {
+    "Port": 41234,
+    "MaxPlayers": 8,
+    "BaseUrl": "https://prod.openversus.org/",
+    "HostName": "",
+    "FireMatchEvents": false,
+    "MatchUpdateKey": "",
+    "VerboseLogging": false,
+    "MementoMori": false
+  },
+
+  "Node": {
+    "Rendezvous": "",
+    "RelayFallback": "",
+    "PunchTimeoutSeconds": 8,
+    "ProbeIntervalMilliseconds": 100,
+    "RegisterIntervalMilliseconds": 500,
+    "KeepAliveIntervalMilliseconds": 1000,
+    "PeerTimeoutSeconds": 30,
+    "GameTimeoutSeconds": 60
+  },
+
+  "Performance": {
+    "SpinThresholdMicroseconds": 500,
+    "UseAdaptiveSpinThreshold": true,
+    "MetricsSamplingInterval": 10,
+    "TargetFrameRate": 60,
+    "GarbageCollectionFreeRAMThreshold": 1024
+  },
+
+  "Networking": {
+    "ReceiveBufferSize": 65536,
+    "SendBufferSize": 65536,
+    "DscpValue": 46,
+    "DontFragment": true,
+    "HttpTimeoutSeconds": 5
+  },
+
+  "GameLogic": {
+    "DisconnectTimeoutSeconds": 45,
+    "MaxInputsPerFrame": 30,
+    "InputHistoryFrames": 150,
+    "InputCleanupInterval": 200,
+    "MinimumInputFrames": 5,
+    "MissToleranceFrames": 10
+  },
+
+  "RiftCalculation": {
+    "Algorithm": "ClientMatched",
+    "PingAlpha": 0.12,
+    "ReportedPing": "Raw",
+    "PeakPingWindow": 60,
+    "RiftAlpha": 0.08,
+    "TargetRift": 0.5,
+    "MaxRiftDeviation": 10.0,
+    "MaxRiftDeviationBoost": 20.0,
+    "MaxRiftDeviationBoostAbove": 60.0,
+    "UseAggressiveCorrection": true,
+    "RiftUpdateInterval": 10,
+    "RiftUpdateThreshold": 500,
+    "HysteresisEnter": 1.25,
+    "HysteresisExit": 0.75,
+    "SmallErrorAlpha": 0.2,
+    "SmallErrorBelow": 3.0
+  },
+
+  "PingPhase": {
+    "TotalPings": 20,
+    "PingIntervalMilliseconds": 50
+  },
+
+  "InputValidation": {
+    "EnableRateLimiting": true,
+    "MaxInputsPerSecond": 120,
+    "InputLookaheadFrames": 100,
+    "InputLookbackFrames": 200
+  },
+
+  "DesyncDetection": {
+    "EnableDesyncDetection": true,
+    "KickDesyncingPlayer": false,
+    "ChecksumRetentionFrames": 300,
+    "ChecksumCleanupInterval": 200,
+    "MaxDesyncCount": 10
+  },
+
+  "Logging": {
+    "MinimumLevel": "Information",
+    "LogArchivePath": "",
+    "EnableMetrics": false,
+    "EnableConsoleMetrics": false,
+    "EnableDebugLogs": false,
+    "LogTickPerformance": true,
+    "TickPerformanceInterval": 500
+  }
+}

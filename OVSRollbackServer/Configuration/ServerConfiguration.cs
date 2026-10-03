@@ -32,6 +32,8 @@ namespace OVS.Rollback.Configuration
         public InputValidationSettings InputValidation { get; set; } = new();
         public DesyncDetectionSettings DesyncDetection { get; set; } = new();
         public LoggingSettings Logging { get; set; } = new();
+        /// <summary>P2P node settings (OVS.Rollback.Node); the server itself never reads them.</summary>
+        public NodeSettings Node { get; set; } = new();
 
         /// <summary>
         /// Singleton instance with thread-safe access
@@ -298,6 +300,17 @@ namespace OVS.Rollback.Configuration
             Server.HostName = GetEnvString("Server__HostName", Server.HostName) ?? "";
             Server.FireMatchEvents = GetEnvBool("Server__FireMatchEvents", Server.FireMatchEvents);
             Server.MatchUpdateKey = GetEnvString("Server__MatchUpdateKey", Server.MatchUpdateKey) ?? "MisconfiguredMatchUpdateKey";
+
+            // Node settings (P2P)
+            Node.Rendezvous = GetEnvString("Node__Rendezvous", Node.Rendezvous) ?? "";
+            Node.RelayFallback = GetEnvString("Node__RelayFallback", Node.RelayFallback) ?? "";
+            Node.ForceRole = GetEnvString("Node__ForceRole", Node.ForceRole) ?? "";
+            Node.PunchTimeoutSeconds = GetEnvInt("Node__PunchTimeoutSeconds", Node.PunchTimeoutSeconds);
+            Node.ProbeIntervalMilliseconds = GetEnvInt("Node__ProbeIntervalMilliseconds", Node.ProbeIntervalMilliseconds);
+            Node.RegisterIntervalMilliseconds = GetEnvInt("Node__RegisterIntervalMilliseconds", Node.RegisterIntervalMilliseconds);
+            Node.KeepAliveIntervalMilliseconds = GetEnvInt("Node__KeepAliveIntervalMilliseconds", Node.KeepAliveIntervalMilliseconds);
+            Node.PeerTimeoutSeconds = GetEnvInt("Node__PeerTimeoutSeconds", Node.PeerTimeoutSeconds);
+            Node.GameTimeoutSeconds = GetEnvInt("Node__GameTimeoutSeconds", Node.GameTimeoutSeconds);
             Server.VerboseLogging = GetEnvBool("Server__VerboseLogging", Server.VerboseLogging);
             Server.MementoMori = GetEnvBool("Server__MementoMori", Server.MementoMori);
 
@@ -433,6 +446,35 @@ namespace OVS.Rollback.Configuration
         public string MatchUpdateKey { get; set; } = String.Empty;
         public bool VerboseLogging { get; set; } = false;
         public bool MementoMori { get; set; } = true;
+    }
+
+    /// <summary>
+    /// Settings for the P2P node (OVS.Rollback.Node), the process on a player's machine that the game
+    /// connects to as its rollback server. The node reads them; the server ignores the section.
+    /// </summary>
+    public class NodeSettings
+    {
+        /// <summary>The rendezvous service, as host:port (UDP). Empty disables P2P: every match is forwarded to RelayFallback.</summary>
+        public string Rendezvous { get; set; } = String.Empty;
+        /// <summary>
+        /// Where to forward a match when no peer path opens within PunchTimeoutSeconds, as host:port: the cloud
+        /// rollback server. Empty: the match is refused (the game times out after 45 s).
+        /// </summary>
+        public string RelayFallback { get; set; } = String.Empty;
+        /// <summary>Testing only: "host" or "forwarder" takes the role regardless of the match config; empty follows is_host.</summary>
+        public string ForceRole { get; set; } = String.Empty;
+        /// <summary>Seconds of probing before a peer is given up on and RelayFallback is used.</summary>
+        public int PunchTimeoutSeconds { get; set; } = 8;
+        /// <summary>Milliseconds between probes to each candidate address while punching.</summary>
+        public int ProbeIntervalMilliseconds { get; set; } = 100;
+        /// <summary>Milliseconds between registrations with the rendezvous until every peer is known.</summary>
+        public int RegisterIntervalMilliseconds { get; set; } = 500;
+        /// <summary>Milliseconds between keepalives on an open peer path (keeps the NAT mapping during pre-match waits).</summary>
+        public int KeepAliveIntervalMilliseconds { get; set; } = 1000;
+        /// <summary>Seconds without anything from a peer before its path is considered lost.</summary>
+        public int PeerTimeoutSeconds { get; set; } = 30;
+        /// <summary>Seconds without anything from the local game before the node forgets the match and waits for the next.</summary>
+        public int GameTimeoutSeconds { get; set; } = 60;
     }
 
     public class PerformanceSettings

@@ -48,6 +48,11 @@ namespace OVS.Rollback.Core
         // ── Lifecycle ──
         private volatile bool _running;
         private Task? _udpTask;
+        // False when a host (the P2P node) owns the socket and hands datagrams in through Deliver.
+        private readonly bool _ownsReceiveLoop = true;
+        // Match configs a host fetched before the first NewConnection (the P2P node fetches its own to
+        // learn its role); consulted before the HTTP fetch so a match is registered once.
+        private readonly ConcurrentDictionary<string, OVSMatchConfig> _preloadedConfigs = new();
 
         // ── Configuration ──
         public string BaseUrl { get; private set; } = "";
@@ -96,6 +101,30 @@ namespace OVS.Rollback.Core
             Log.ServerStarted(_logger, serverType, _port);
         }
 
+        /// <summary>
+        /// The engine on a socket its host owns: the host binds it, runs the receive loop, and hands every
+        /// game datagram to <see cref="Deliver"/>. Sends go out on the same socket. Used by the P2P node, which
+        /// shares one socket between the game and its own peer protocol.
+        /// </summary>
+        public RollbackServer(ILogger<RollbackServer> logger, Socket socket, int maxPlayers = Constants.MaxPlayers)
+            : this(logger, (ushort)((socket.LocalEndPoint as IPEndPoint)?.Port ?? 0), maxPlayers, socket)
+        {
+            _ownsReceiveLoop = false;
+        }
+
+        private RollbackServer(ILogger<RollbackServer> logger, ushort port, int maxPlayers, Socket socket)
+            : this(logger, port, maxPlayers)
+        {
+            _socket.Dispose();
+            _socket = socket;
+        }
+
+        /// <summary>
+        /// A match config already fetched for <paramref name="matchId"/>; the first NewConnection for it uses
+        /// this instead of fetching one.
+        /// </summary>
+        public void PreloadMatchConfig(string matchId, OVSMatchConfig config) => _preloadedConfigs[matchId] = config;
+
         public void Start()
         {
             if (_running)
@@ -136,11 +165,14 @@ namespace OVS.Rollback.Core
                 _logger.LogWarning("RiftCalculation.ReportedPing is '{Configured}', which is not Raw, Smoothed or Peak. Using Raw.", reportedPing);
 
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
-            SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
 
-            // ← NEW: Apply low-latency socket options (DSCP EF, buffers, DontFragment)
-            _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
-            _udpTask = Task.Run(RunUdpServerAsync);
+            if (_ownsReceiveLoop)
+            {
+                // Apply low-latency socket options (DSCP EF, buffers, DontFragment), then bind and receive.
+                SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
+                _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
+                _udpTask = Task.Run(RunUdpServerAsync);
+            }
 
             _ = Events.SendServerListeningEvent(this, StatusEventArgs.CreateNew(
                      description: "ServerListening",
@@ -157,13 +189,16 @@ namespace OVS.Rollback.Core
             if (!_running) return;
             _running = false;
 
-            try
+            if (_ownsReceiveLoop)
             {
-                _socket.Shutdown(SocketShutdown.Both);
-            }
-            catch { }
+                try
+                {
+                    _socket.Shutdown(SocketShutdown.Both);
+                }
+                catch { }
 
-            _socket.Close();
+                _socket.Close();
+            }
 
             _ = Events.SendServerStopEvent(this, StatusEventArgs.CreateNew(
                 description: "ServerStopping",
@@ -187,7 +222,7 @@ namespace OVS.Rollback.Core
         public async ValueTask DisposeAsync()
         {
             await StopAsync();
-            _socket.Dispose();
+            if (_ownsReceiveLoop) _socket.Dispose();
             _httpClient.Dispose();
             _matchCreationLock.Dispose();
         }
@@ -208,43 +243,7 @@ namespace OVS.Rollback.Core
                 {
 
                     var result = await _socket.ReceiveFromAsync(buffer, SocketFlags.None, anyEp);
-                    var remote = (IPEndPoint)result.RemoteEndPoint;
-
-                    if (!connections.Contains(remote.Address.ToString()))
-                    {
-                        connections.Add(remote.Address.ToString());
-                        Log.ConnectionReceived(_logger, remote.Address.ToString());
-                    }
-
-                    ServerMetrics.PacketsReceived.Add(1);
-
-                    int receivedBytes = result.ReceivedBytes;
-
-                    // Decompress into a fresh byte[] that is independent of the shared
-                    // receive buffer, so it is safe to hand off to an async path.
-                    // C++ catch-all equivalent: on failure, treat as uncompressed.
-                    byte[] decompressed;
-                    try { decompressed = CompressionHelper.Decompress(buffer[..receivedBytes]); }
-                    catch (Exception ex)
-                    {
-                        Log.DecompressionFailed(_logger, ex, receivedBytes, remote.ToString());
-                        decompressed = buffer[..receivedBytes];
-                    }
-
-                    if (decompressed.Length > 0 &&
-                        (ClientMessageType)decompressed[0] == ClientMessageType.NewConnection)
-                    {
-                        // Offload onto the thread pool — the HTTP fetch inside
-                        // HandleNewConnection can take hundreds of milliseconds and
-                        // must not block the receive loop.
-                        _ = HandleNewConnectionMessage(decompressed, remote);
-                    }
-                    else
-                    {
-                        // Fast path: all other message types complete in microseconds,
-                        // handled synchronously before the next ReceiveFromAsync.
-                        HandleMessage(decompressed, remote);
-                    }
+                    Deliver(buffer, result.ReceivedBytes, (IPEndPoint)result.RemoteEndPoint);
                 }
                 catch (OperationCanceledException) { break; }
                 catch (SocketException ex) when (ex.SocketErrorCode == SocketError.OperationAborted) { break; }
@@ -253,6 +252,47 @@ namespace OVS.Rollback.Core
                     Log.ReceiveError(_logger, ex);
                     if (!_running) break;
                 }
+            }
+        }
+
+        /// <summary>
+        /// One datagram from a game client, as the receive loop (or the host of the socket) got it. The
+        /// buffer is read, never kept: the decompressed copy is what the handlers own.
+        /// </summary>
+        public void Deliver(byte[] buffer, int receivedBytes, IPEndPoint remote)
+        {
+            if (!connections.Contains(remote.Address.ToString()))
+            {
+                connections.Add(remote.Address.ToString());
+                Log.ConnectionReceived(_logger, remote.Address.ToString());
+            }
+
+            ServerMetrics.PacketsReceived.Add(1);
+
+            // Decompress into a fresh byte[] that is independent of the shared
+            // receive buffer, so it is safe to hand off to an async path.
+            // C++ catch-all equivalent: on failure, treat as uncompressed.
+            byte[] decompressed;
+            try { decompressed = CompressionHelper.Decompress(buffer[..receivedBytes]); }
+            catch (Exception ex)
+            {
+                Log.DecompressionFailed(_logger, ex, receivedBytes, remote.ToString());
+                decompressed = buffer[..receivedBytes];
+            }
+
+            if (decompressed.Length > 0 &&
+                (ClientMessageType)decompressed[0] == ClientMessageType.NewConnection)
+            {
+                // Offload onto the thread pool — the HTTP fetch inside
+                // HandleNewConnection can take hundreds of milliseconds and
+                // must not block the receive loop.
+                _ = HandleNewConnectionMessage(decompressed, remote);
+            }
+            else
+            {
+                // Fast path: all other message types complete in microseconds,
+                // handled synchronously before the next receive.
+                HandleMessage(decompressed, remote);
             }
         }
 
@@ -419,7 +459,10 @@ namespace OVS.Rollback.Core
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
 
-                    config = await _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key);
+                    if (!_preloadedConfigs.TryRemove(matchData.MatchId, out config))
+                    {
+                        config = await _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key);
+                    }
                     if (config is null)
                     {
                         Log.FetchConfigFailed(_logger, matchData.MatchId, new InvalidDataException("Match config is null."));
@@ -533,7 +576,25 @@ namespace OVS.Rollback.Core
             // Fast path: player already fully registered (retransmit / reconnect).
             if (_players.TryGetValue(key, out var existing))
             {
-                return existing;
+                if (existing.MatchId == matchData.MatchId)
+                {
+                    return existing;
+                }
+                // The same address with a new match: a P2P node, whose address is the same every match, after a
+                // match of its that never reached the tick loop's cleanup. Registering it afresh is the only way
+                // it ever gets a reply; the stale match goes once nobody is left in it.
+                _logger.LogWarning("Endpoint {Key} registered for match {Old} connects for match {New}; dropping the stale registration",
+                    key, existing.MatchId, matchData.MatchId);
+                _players.TryRemove(key, out _);
+                if (_matches.TryGetValue(existing.MatchId, out var stale))
+                {
+                    stale.Players.TryRemove(key, out _);
+                    if (stale.Players.IsEmpty && !stale.IsTickRunning)
+                    {
+                        _matches.TryRemove(existing.MatchId, out _);
+                        Log.MatchCleanedUp(_logger, existing.MatchId);
+                    }
+                }
             }
 
             string playerID = "Unknown";

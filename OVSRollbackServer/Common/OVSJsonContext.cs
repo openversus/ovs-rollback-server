@@ -25,6 +25,7 @@ namespace OVS.Rollback.Common
         AllowTrailingCommas = true,
         NumberHandling = JsonNumberHandling.AllowReadingFromString)]
     [JsonSerializable(typeof(ServerConfiguration))]
+    [JsonSerializable(typeof(NodeSettings))]
     [JsonSerializable(typeof(OVSMatchConfig))]
     [JsonSerializable(typeof(MatchStatusResponse))]
     [JsonSerializable(typeof(RegisterPayload))]
