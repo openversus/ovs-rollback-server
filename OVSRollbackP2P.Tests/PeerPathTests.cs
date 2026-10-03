@@ -90,6 +90,23 @@ public class PeerPathTests
     }
 
     [Fact]
+    public void Without_candidates_nothing_is_sent_and_the_clock_does_not_run()
+    {
+        var t = TimeSpan.Zero;
+        var p = new PeerPath(0, 1, Hash, Options, t);
+        for (var now = t; now < TimeSpan.FromSeconds(60); now += TimeSpan.FromSeconds(1)) Assert.Empty(Sent(p, now));
+        Assert.Equal(PeerPathState.Probing, p.State);
+        // The peer registers a minute in: probing starts now and has the whole timeout from here.
+        p.AddCandidates([Public]);
+        var late = TimeSpan.FromSeconds(60);
+        Assert.Single(Sent(p, late));
+        Sent(p, late + Options.PunchTimeout - TimeSpan.FromMilliseconds(100));
+        Assert.Equal(PeerPathState.Probing, p.State);
+        Sent(p, late + Options.PunchTimeout);
+        Assert.Equal(PeerPathState.Failed, p.State);
+    }
+
+    [Fact]
     public void No_answer_within_the_timeout_fails()
     {
         var t = TimeSpan.Zero;

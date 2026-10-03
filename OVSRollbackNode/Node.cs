@@ -101,6 +101,9 @@ namespace OVS.Rollback.Node
             SocketConfigurator.ConfigureForLowLatency(_socket, _log);
             _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
             _engine = new RollbackServer(Utilities.NewLogger<RollbackServer>(), _socket, config.Server.MaxPlayers);
+            // The server tells the cloud a match started through its authenticated status events; a node has no
+            // such key, so it posts the key-checked route the TS server has for this instead.
+            _engine.MatchStarted += (matchId, key) => _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSMatchStarted, matchId, key);
         }
 
         public async Task RunAsync(CancellationToken ct)
@@ -277,6 +280,8 @@ namespace OVS.Rollback.Node
                             {
                                 s.Phase = Phase.Serving;
                                 _log.LogInformation("Match {Match}: every path is open; the engine serves this match", s.MatchId);
+                                // The cloud holds the players' "your server is ready" until the host actually serves.
+                                _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSP2PReady, s.MatchId, s.Key);
                             }
                         }
                     }
@@ -346,10 +351,11 @@ namespace OVS.Rollback.Node
                         foreach (var (to, datagram) in path.Tick(now)) Send(datagram, datagram.Length, to);
                         if (path.State != before) OnPathChanged(s, path, now);
                     }
-                    if (s.Phase == Phase.Punching && now - s.Started >= _puncher.PunchTimeout + TimeSpan.FromSeconds(1))
+                    if (s.Phase == Phase.Punching && now - s.Started >= TimeSpan.FromSeconds(Math.Max(5, _settings.PunchDeadlineSeconds)))
                     {
-                        // Safety net: a path's own timeout normally gets here first (OnPathChanged).
-                        FallBack(s, "not every peer path opened within the punch timeout");
+                        // A peer that never registered (its game never connected) has no candidates and so no path
+                        // timeout; the game that connected here has been waiting since s.Started, out of its 45 s.
+                        FallBack(s, $"not every peer registered within {_settings.PunchDeadlineSeconds} s");
                     }
                     break;
 

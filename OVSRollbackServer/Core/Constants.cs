@@ -37,6 +37,10 @@ namespace OVS.Rollback.Core
             internal const string OVSRegister = "/ovs_register";
             internal const string OVSEndMatch = "/ovs_end_match";
             internal const string OVSMatchStatus = "/api/ovs_match_status";
+            /// <summary>Match id + key: the match has started (the TS route exists for exactly this; a P2P host node posts it).</summary>
+            internal const string OVSMatchStarted = "/ovs_match_started";
+            /// <summary>Match id + key: a P2P host node is serving, so the players may be told their server is ready.</summary>
+            internal const string OVSP2PReady = "/ovs_p2p_ready";
             internal const string MVSIRegister = "/mvsi_register";
             internal const string MVSIEndMatch = "/mvsi_end_match";
         }

@@ -56,6 +56,12 @@ namespace OVS.Rollback.Core
 
         // ── Configuration ──
         public string BaseUrl { get; private set; } = "";
+
+        /// <summary>
+        /// A match's tick loop just started (every player ready). Raised whether or not match status events are on;
+        /// the P2P node uses it to post /ovs_match_started, which it may do with the match key alone.
+        /// </summary>
+        public event Action<string, string>? MatchStarted;
         public bool IsOVS { get; private set; }
         public bool IsMVSI { get; private set; }
 
@@ -977,6 +983,8 @@ namespace OVS.Rollback.Core
                 if (!match.IsTickRunning)
                 {
                     StartTickLoop(match);
+                    try { MatchStarted?.Invoke(match.MatchId, match.Key); }
+                    catch (Exception ex) { _logger.LogError(ex, "MatchStarted handler failed for match {MatchId}", match.MatchId); }
                 }
 
                 _ = Events.SendMatchStartEvent(this, StatusEventArgs.CreateNew(

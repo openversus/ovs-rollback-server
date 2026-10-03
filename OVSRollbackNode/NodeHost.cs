@@ -1,4 +1,5 @@
 // NodeHost.cs
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using OVS.Rollback.Common;
 using OVS.Rollback.Configuration;
@@ -33,7 +34,11 @@ namespace OVS.Rollback.Node
             }
 
             using var cts = new CancellationTokenSource();
-            Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+            // The engine's hosting container registers a console lifetime that marks SIGTERM and SIGINT as handled
+            // and then does nothing with them (its host is never run), which would leave the node immune to a plain
+            // kill. Own registrations run too, and these end the loop.
+            using var sigterm = PosixSignalRegistration.Create(PosixSignal.SIGTERM, ctx => { ctx.Cancel = true; cts.Cancel(); });
+            using var sigint = PosixSignalRegistration.Create(PosixSignal.SIGINT, ctx => { ctx.Cancel = true; cts.Cancel(); });
             AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
 
             await using var node = new Node(logger, config, port);

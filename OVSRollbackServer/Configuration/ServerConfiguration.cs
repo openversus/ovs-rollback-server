@@ -306,6 +306,7 @@ namespace OVS.Rollback.Configuration
             Node.RelayFallback = GetEnvString("Node__RelayFallback", Node.RelayFallback) ?? "";
             Node.ForceRole = GetEnvString("Node__ForceRole", Node.ForceRole) ?? "";
             Node.PunchTimeoutSeconds = GetEnvInt("Node__PunchTimeoutSeconds", Node.PunchTimeoutSeconds);
+            Node.PunchDeadlineSeconds = GetEnvInt("Node__PunchDeadlineSeconds", Node.PunchDeadlineSeconds);
             Node.ProbeIntervalMilliseconds = GetEnvInt("Node__ProbeIntervalMilliseconds", Node.ProbeIntervalMilliseconds);
             Node.RegisterIntervalMilliseconds = GetEnvInt("Node__RegisterIntervalMilliseconds", Node.RegisterIntervalMilliseconds);
             Node.KeepAliveIntervalMilliseconds = GetEnvInt("Node__KeepAliveIntervalMilliseconds", Node.KeepAliveIntervalMilliseconds);
@@ -463,8 +464,14 @@ namespace OVS.Rollback.Configuration
         public string RelayFallback { get; set; } = String.Empty;
         /// <summary>Testing only: "host" or "forwarder" takes the role regardless of the match config; empty follows is_host.</summary>
         public string ForceRole { get; set; } = String.Empty;
-        /// <summary>Seconds of probing before a peer is given up on and RelayFallback is used.</summary>
+        /// <summary>Seconds of probing, counted from when a peer's address is known, before it is given up on.</summary>
         public int PunchTimeoutSeconds { get; set; } = 8;
+        /// <summary>
+        /// Seconds after the local game first connected by which every peer must have been reached, else
+        /// RelayFallback; a peer whose game is still on the perk screen has not registered yet. The game itself
+        /// waits 45 s for its server, so this leaves it time to reach the relay.
+        /// </summary>
+        public int PunchDeadlineSeconds { get; set; } = 30;
         /// <summary>Milliseconds between probes to each candidate address while punching.</summary>
         public int ProbeIntervalMilliseconds { get; set; } = 100;
         /// <summary>Milliseconds between registrations with the rendezvous until every peer is known.</summary>

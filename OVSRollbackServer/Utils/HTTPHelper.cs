@@ -216,6 +216,24 @@ namespace OVS.Rollback.Utils
             }
         }
 
+        /// <summary>
+        /// POST <see cref="Endpoints.OVSMatchStarted"/> or <see cref="Endpoints.OVSP2PReady"/>: match id and key, checked
+        /// by the match key alone, which is what a P2P node holds. Failures are logged, never thrown.
+        /// </summary>
+        protected internal async Task PostMatchKeyedAsync(string path, string matchId, string key)
+        {
+            string url = BaseUrl + path;
+            try
+            {
+                await PostJsonAsync(url: url, data: new RegisterPayload { MatchId = matchId, Key = key }, returnBody: false);
+                _logger.LogInformation("{LogPrefix} Posted {Path} for match {MatchId}", LogPrefix, path, matchId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "{LogPrefix} POST {Url} for match {MatchId} failed: {Message}", LogPrefix, url, matchId, ex.Message);
+            }
+        }
+
         protected internal async Task<MatchStatusResponse?> SendMatchStatus(StatusEventArgs matchStatus)
         {
             var payload = matchStatus.StatusObject;

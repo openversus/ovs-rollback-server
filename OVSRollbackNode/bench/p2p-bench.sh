@@ -25,7 +25,7 @@ SYNTHETIC=${SYNTHETIC:-$HOME/git/ovs-synthetic-client}
 NETWORK=ovs-synthetic
 IMAGE=ovs-rollback-node
 RDV_PORT=${RDV_PORT:-41235}
-GAME_PORT=57000
+GAME_PORT=${GAME_PORT:-57000}
 LOGS=${LOGS:-/tmp/p2p-bench}
 mkdir -p "$LOGS"
 
@@ -64,9 +64,11 @@ case "${1:-}" in
     else
       PLAYERS="1 2"
     fi
-    # The players: each connects to its own loopback instead of the address the notification names.
+    # The players: each connects to its own loopback instead of the address the notification names. A host node
+    # answers its game only once every peer path is open, and a real game sends its first NewConnection some 15 s
+    # after the perks lock (map loading); the synthetic connects at once, so it waits like the real game does (45 s).
     # shellcheck disable=SC2086
-    SYNTHETIC_ARGS="${SYNTHETIC_ARGS:-} --Rollback:Host 127.0.0.1" "$SYNTHETIC/run.sh" up $PLAYERS
+    SYNTHETIC_ARGS="${SYNTHETIC_ARGS:-} --Rollback:Host 127.0.0.1 --Rollback:ConnectTimeoutSeconds 45" "$SYNTHETIC/run.sh" up $PLAYERS
     GW=$(gateway)
     RDV="$GW:$RDV_PORT"; [ "${NO_RDV:-}" = 1 ] && RDV="$GW:9"
     for n in $PLAYERS; do

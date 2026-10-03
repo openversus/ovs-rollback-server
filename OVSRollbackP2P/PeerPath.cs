@@ -22,12 +22,15 @@ namespace OVS.Rollback.P2P
     /// acknowledgement to arrive proves the path both ways, and its source address is the one to use. A probe
     /// that arrives from an address nobody announced (a NAT that rewrites ports) adds that address as a candidate.
     /// Once open, keepalives keep the NAT mapping alive; silence for PeerTimeout reopens probing.
+    /// The punch timeout counts from the first candidate, not from construction: a peer whose game is still on
+    /// the perk screen has not registered yet, and that wait is the game's 45 s to spend, not this timeout's.
     /// </summary>
     public sealed class PeerPath
     {
         private readonly PuncherOptions _o;
         private readonly List<IPEndPoint> _candidates = [];
-        private TimeSpan _started, _nextProbe, _nextKeepAlive, _lastHeard;
+        private TimeSpan _nextProbe, _nextKeepAlive, _lastHeard;
+        private TimeSpan? _started;
         private uint _sequence;
 
         public ushort MyIndex { get; }
@@ -45,7 +48,7 @@ namespace OVS.Rollback.P2P
             PeerIndex = peerIndex;
             MatchHash = matchHash;
             _o = options;
-            _started = _nextProbe = now;
+            _nextProbe = now;
             _lastHeard = now;
         }
 
@@ -58,13 +61,22 @@ namespace OVS.Rollback.P2P
             }
         }
 
+        /// <summary>Starts (or restarts) the punch timeout at <paramref name="now"/>; called with the first candidate.</summary>
+        private void StartClock(TimeSpan now)
+        {
+            _started = now;
+            _nextProbe = now;
+        }
+
         /// <summary>What to send now: probes to every candidate while probing, a keepalive on the live path once open.</summary>
         public IEnumerable<(IPEndPoint To, byte[] Datagram)> Tick(TimeSpan now)
         {
             switch (State)
             {
                 case PeerPathState.Probing:
-                    if (now - _started >= _o.PunchTimeout)
+                    if (_candidates.Count == 0) yield break;        // nothing to probe yet; the clock has not started
+                    if (_started is null) StartClock(now);
+                    if (now - _started.Value >= _o.PunchTimeout)
                     {
                         State = PeerPathState.Failed;
                         yield break;
@@ -83,7 +95,7 @@ namespace OVS.Rollback.P2P
                     {
                         // The path went quiet: probe again, from scratch, with the same candidates.
                         State = PeerPathState.Probing;
-                        _started = _nextProbe = now;
+                        StartClock(now);
                         Live = null;
                         yield break;
                     }
