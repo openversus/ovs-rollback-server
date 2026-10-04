@@ -103,6 +103,17 @@ public class ProtocolTests
     }
 
     [Fact]
+    public void Fallback_round_trips_and_is_not_a_keepalive()
+    {
+        var m = new FallbackMessage(P2PProtocol.HashMatch("6ac0712bdd431596a0080938", "key"), 0);
+        var bytes = P2PProtocol.Encode(m);
+        Assert.Equal(m, P2PProtocol.DecodeFallback(bytes));
+        Assert.Equal(P2PMessageKind.Fallback, P2PProtocol.KindOf(bytes));
+        Assert.Null(P2PProtocol.DecodeKeepAlive(bytes));
+        Assert.Null(P2PProtocol.DecodeFallback(P2PProtocol.Encode(new KeepAliveMessage(m.MatchHash, 0))));
+    }
+
+    [Fact]
     public void KeepAlive_round_trips()
     {
         var m = new KeepAliveMessage(P2PProtocol.HashMatch("6ac0712bdd431596a0080938", "key"), 3);

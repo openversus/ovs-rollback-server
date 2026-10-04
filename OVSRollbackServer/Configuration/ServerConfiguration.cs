@@ -307,6 +307,7 @@ namespace OVS.Rollback.Configuration
             Node.ForceRole = GetEnvString("Node__ForceRole", Node.ForceRole) ?? "";
             Node.PunchTimeoutSeconds = GetEnvInt("Node__PunchTimeoutSeconds", Node.PunchTimeoutSeconds);
             Node.PunchDeadlineSeconds = GetEnvInt("Node__PunchDeadlineSeconds", Node.PunchDeadlineSeconds);
+            Node.ForwarderGraceSeconds = GetEnvInt("Node__ForwarderGraceSeconds", Node.ForwarderGraceSeconds);
             Node.ProbeIntervalMilliseconds = GetEnvInt("Node__ProbeIntervalMilliseconds", Node.ProbeIntervalMilliseconds);
             Node.RegisterIntervalMilliseconds = GetEnvInt("Node__RegisterIntervalMilliseconds", Node.RegisterIntervalMilliseconds);
             Node.KeepAliveIntervalMilliseconds = GetEnvInt("Node__KeepAliveIntervalMilliseconds", Node.KeepAliveIntervalMilliseconds);
@@ -477,6 +478,13 @@ namespace OVS.Rollback.Configuration
         /// waits 45 s for its server, so this leaves it time to reach the relay.
         /// </summary>
         public int PunchDeadlineSeconds { get; set; } = 30;
+        /// <summary>
+        /// Seconds past PunchDeadlineSeconds after which a forwarder whose path to the host opened but which has had
+        /// nothing for its game from the host's node falls back too (the host falls back at its deadline and tells its
+        /// peers; this covers a lost notice or a host that died). Must leave the game time to reach the relay within
+        /// its own 45 s.
+        /// </summary>
+        public int ForwarderGraceSeconds { get; set; } = 5;
         /// <summary>Milliseconds between probes to each candidate address while punching.</summary>
         public int ProbeIntervalMilliseconds { get; set; } = 100;
         /// <summary>Milliseconds between registrations with the rendezvous until every peer is known.</summary>

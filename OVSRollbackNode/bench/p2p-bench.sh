@@ -15,7 +15,9 @@
 #   p2p-bench.sh me-down   undoes "me": stops everything and starts the bench's rollback server again.
 #
 # Fallback test: NO_RDV=1 RELAY=<gateway>:57000 p2p-bench.sh up points the nodes at a dead rendezvous port; after
-# the punch timeout both forward to the bench's rollback server on the host, as the relay.
+# the punch timeout both forward to the bench's rollback server on the host, as the relay. NODE_ENV (every node) and
+# NODE_ENV_N (node N only, exported) add docker -e options, e.g. NODE_ENV_4="-e Node__Rendezvous=<gateway>:9" leaves only
+# node 4 without a rendezvous.
 #
 # Needs the bench up (ovs-http-server/dotnet/local/bench.sh status) and ~/git/ovs-synthetic-client. The bench's own
 # rollback server on the host's UDP 57000 is not used: each node is the rollback server for its player, and the host
@@ -74,11 +76,12 @@ case "${1:-}" in
     GW=$(gateway)
     RDV="$GW:$RDV_PORT"; [ "${NO_RDV:-}" = 1 ] && RDV="$GW:9"
     for n in $PLAYERS; do
+      own="NODE_ENV_$n"
       docker rm -f "$IMAGE-$n" >/dev/null 2>&1 || true
       docker run -d --name "$IMAGE-$n" --network "container:ovs-synthetic-$n" \
         -e Server__BaseUrl="http://$GW:18000" -e OVS_SERVER="http://$GW:18000" \
         -e Node__Rendezvous="$RDV" -e Node__RelayFallback="${RELAY:-}" \
-        ${NODE_ENV:-} "$IMAGE" "$GAME_PORT" >/dev/null
+        ${NODE_ENV:-} ${!own:-} "$IMAGE" "$GAME_PORT" >/dev/null
       echo "node $n: in player $n's namespace, game port $GAME_PORT"
     done
     ;;

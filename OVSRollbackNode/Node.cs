@@ -63,6 +63,9 @@ namespace OVS.Rollback.Node
             public TimeSpan LastGame = now;
             public bool PeersComplete;
             public bool GameDisconnecting;
+            public bool HeardFromTarget;        // forwarder: a game datagram has come back from its target
+            public bool NotifyFallback;         // was the host and fell back: tell the peers on open paths
+            public TimeSpan NoticesUntil, NextNotice;
         }
 
         private readonly ILogger _log;
@@ -303,6 +306,7 @@ namespace OVS.Rollback.Node
                     _engine.Deliver(buffer, length, from);
                     break;
                 case Role.Forwarder when s.Target is not null && from.Equals(s.Target):
+                    s.HeardFromTarget = true;
                     if (!s.TargetIsRelay && s.Peers.TryGetValue(s.HostIndex, out var host)) host.Heard(now);
                     if (s.GameEndPoint is not null) Send(buffer, length, s.GameEndPoint);
                     break;
@@ -348,6 +352,16 @@ namespace OVS.Rollback.Node
                                 _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSP2PReady, s.MatchId, s.Key);
                             }
                         }
+                    }
+                    break;
+
+                case P2PMessageKind.Fallback:
+                    // Only from the host, on the path this node opened to it, for this match.
+                    if (s is not null && s.Role == Role.Forwarder && !s.TargetIsRelay && P2PProtocol.DecodeFallback(data) is { } fallback
+                        && fallback.MatchHash == s.Hash && fallback.FromIndex == s.HostIndex
+                        && s.Peers.TryGetValue(s.HostIndex, out var hostPath) && from.Equals(hostPath.Live))
+                    {
+                        FallBack(s, "the host's node fell back to the relay");
                     }
                     break;
 
@@ -434,6 +448,29 @@ namespace OVS.Rollback.Node
                         // A peer that never registered (its game never connected) has no candidates and so no path
                         // timeout; the game that connected here has been waiting since s.Started, out of its 45 s.
                         FallBack(s, $"not every peer registered within {_settings.PunchDeadlineSeconds} s");
+                    }
+                    else if (s.Role == Role.Forwarder && !s.TargetIsRelay && s.Target is not null && !s.HeardFromTarget
+                        && now - s.Started >= TimeSpan.FromSeconds(Math.Max(5, _settings.PunchDeadlineSeconds) + Math.Max(0, _settings.ForwarderGraceSeconds)))
+                    {
+                        // The path to the host opened, but the host's node never answered the game: it fell back (and
+                        // its notice was lost) or it died. The whole match has to be on one side.
+                        FallBack(s, $"the host's node has not answered the game in {_settings.PunchDeadlineSeconds + _settings.ForwarderGraceSeconds} s");
+                    }
+                    if (s.NotifyFallback)
+                    {
+                        // A few notices over a second: a single datagram can be lost.
+                        s.NotifyFallback = false;
+                        s.NoticesUntil = now + TimeSpan.FromSeconds(1);
+                        s.NextNotice = now;
+                    }
+                    if (now < s.NoticesUntil && now >= s.NextNotice)
+                    {
+                        s.NextNotice = now + TimeSpan.FromMilliseconds(250);
+                        var notice = P2PProtocol.Encode(new FallbackMessage(s.Hash, s.MyIndex));
+                        foreach (var path in s.Peers.Values)
+                        {
+                            if (path.Live is { } live) Send(notice, notice.Length, live);
+                        }
                     }
                     break;
 
@@ -580,6 +617,12 @@ namespace OVS.Rollback.Node
         private void FallBack(Session s, string reason)
         {
             if (s.RelayLookup is not null) return;      // already asked
+            if (s.Role == Role.Host)
+            {
+                // The peers that reached this node must follow it, or they wait on a host that no longer hosts.
+                s.NotifyFallback = true;
+                _log.LogWarning("Match {Match}: telling the peers on open paths that the match goes to the relay", s.MatchId);
+            }
             var relay = s.Relay ?? _relay;
             if (relay is not null)
             {
@@ -593,6 +636,10 @@ namespace OVS.Rollback.Node
             _log.LogWarning("Match {Match}: {Reason}; asking the server for a relay{Was}", s.MatchId, reason,
                 s.Role == Role.Host ? " (this node would have hosted)" : "");
             s.Role = Role.Forwarder;
+            // A forwarder leaving the host's node: no target until the answer comes (the lookup is applied only to a
+            // session without one), so the game's datagrams wait as they do while punching.
+            s.Target = null;
+            s.TargetIsRelay = false;
             s.RelayLookup = LookUpRelayAsync(s.MatchId, s.Key);
         }
 

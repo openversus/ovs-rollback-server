@@ -19,6 +19,7 @@
     "RelayFallback": "",
     "PunchTimeoutSeconds": 8,
     "PunchDeadlineSeconds": 30,
+    "ForwarderGraceSeconds": 5,
     "ProbeIntervalMilliseconds": 100,
     "RegisterIntervalMilliseconds": 500,
     "KeepAliveIntervalMilliseconds": 1000,
