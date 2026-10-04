@@ -139,6 +139,7 @@ namespace OVS.Rollback.Core
             }
 
             _running = true;
+            TickTiming.Calibrate(_logger);
 
             byte configuredMaxInputs = ServerConfiguration.Instance.GameLogic.MaxInputsPerFrame;
             if (configuredMaxInputs > Constants.ClientLimits.MaxFramesPerSlot)
@@ -1503,7 +1504,6 @@ namespace OVS.Rollback.Core
                 (long)(match.TickIntervalMs / 1000.0 * Stopwatch.Frequency);
             long startTime = Stopwatch.GetTimestamp();
             long nextTickTime = startTime + targetIntervalTicks;
-            long accumulatedError = 0;
 
             _logger.LogInformation("Stopwatch raw frequency resolution is: {Frequency}", Stopwatch.Frequency);
 
@@ -1523,11 +1523,16 @@ namespace OVS.Rollback.Core
                     Stopwatch.Frequency / 1_000_000.0);
             }
 
+            // Never less than this machine's measured sleep overshoot (TickTiming): a sleep that ends later than the
+            // deadline cannot be undone, a yield a little early costs a little CPU.
+            long configuredSpinThreshold = spinThreshold;
+            spinThreshold = TickTiming.SpinThresholdFor(spinThreshold);
+
             _logger.LogInformation(
                 "Starting tick loop for match {MatchId} with target interval {Interval}ms, " +
-                "spin threshold {SpinThreshold}μs (spinThreshold: {spinThreshold}), adaptive spin: {AdaptiveSpin}",
+                "spin threshold {SpinThreshold}μs (spinThreshold: {spinThreshold}, configured {Configured}μs), adaptive spin: {AdaptiveSpin}",
                 match.MatchId, match.TickIntervalMs, spinThreshold * 1_000_000.0 / Stopwatch.Frequency, spinThreshold,
-                config.Performance.UseAdaptiveSpinThreshold);
+                configuredSpinThreshold * 1_000_000.0 / Stopwatch.Frequency, config.Performance.UseAdaptiveSpinThreshold);
 
             int perfCount = 0;
             long perfStart = Stopwatch.GetTimestamp();
@@ -1597,27 +1602,21 @@ namespace OVS.Rollback.Core
                 long elapsed = now - startTime;
                 match.CurrentFrame = (uint)(elapsed / targetIntervalTicks);
 
-                // ── Drift compensation (UNCHANGED) ──
+                // ── Schedule ──
+                // An absolute schedule: a tick that ends late is caught up by the next deadline being nearer, by itself.
+                // A "drift compensation" used to subtract the measured lateness from the schedule as well, which double
+                // counted it: with a wait that ends late by the same amount every tick (Windows's coarse Thread.Sleep,
+                // about 3 ms at the default timer resolution) the period shrank to interval minus that amount, and both
+                // Windows P2P hosts ticked at 13.5 ms instead of 16.67 (2026-10-03; the frame counter above is wall-clock,
+                // so frames were right and only the tick cadence and the CPU were off). Linux's precise sleep never
+                // showed it.
                 nextTickTime += targetIntervalTicks;
-                if (accumulatedError != 0)
-                {
-                    long correction = accumulatedError / 4;
-                    nextTickTime -= correction;
-                    accumulatedError -= correction;
-                }
-
                 long waitTicks = nextTickTime - now;
                 if (waitTicks < 0)
                 {
-                    accumulatedError += waitTicks;
+                    // Fallen behind by more than a tick (a stall): restart the schedule from now rather than racing to
+                    // catch up a backlog.
                     nextTickTime = now;
-                    long maxError = targetIntervalTicks * 3;
-
-                    if (accumulatedError < -maxError)
-                    {
-                        accumulatedError = -maxError;
-                    }
-
                     continue;
                 }
 
@@ -1645,9 +1644,6 @@ namespace OVS.Rollback.Core
                 }
 
                 // ── Measure timing error ──
-                long afterWait = Stopwatch.GetTimestamp();
-                long timerError = (afterWait - now) - waitTicks;
-                accumulatedError += timerError;
 
                 // ── Perf reporting ──
                 perfCount++;
