@@ -14,7 +14,20 @@ namespace OVS.Rollback.Node
             // Touching Singletons loads the engine's configuration (its appsettings.json beside this executable, env
             // overrides, the port from argv[1] when given) and its logging. The node's own file then replaces it,
             // with the same env overrides; nothing has read the configuration for keeps yet.
+            // Touch the engine before asking it for a logger. Every logger NewLogger hands out forwards to the root
+            // Serilog logger that the engine's module initializer creates, and that initializer runs on the first
+            // call into the engine's own code. In the ReadyToRun single-file build, NewLogger<Node>() alone was not
+            // one: a generic instantiation over a type of this assembly is compiled into this assembly's image, so
+            // the node's logger captured Serilog's silent default and every line of this class vanished, while the
+            // engine's own lines (loggers made after initialization) were fine (2026-10-03). A non-generic member is a
+            // call into the engine, and the version is one worth having anyway.
+            string engineVersion = Statics.OVSRollbackVersion;
             var logger = Utilities.NewLogger<Node>();
+            // The options reached the environment in Program.Main, before the engine was first touched (its module
+            // initializer builds the HTTP helper that fetches match configs, which reads OVS_SERVER right then; exporting
+            // here, after that touch, left the helper on node.appsettings.json's default, and his friend's node asked
+            // the old prod instance for a match the 8420 instance owned: empty body, match timed out, 2026-10-03).
+            // ApplyOptions below puts the same values into the loaded configuration, for everything that reads that.
             string settingsPath = Path.Combine(AppContext.BaseDirectory, "node.appsettings.json");
             ServerConfiguration.Initialize(logger, settingsPath);
             var config = Singletons.Config;
@@ -22,11 +35,12 @@ namespace OVS.Rollback.Node
             {
                 return 2;
             }
+            logger.LogInformation("Match configs and reports go to {Server} (register URL {RegisterUrl})", Singletons.SharedHTTPHelper.BaseUrl, Singletons.SharedHTTPHelper.RegisterURL);
             logger.LogInformation("Node settings from {Path} and the command line: rendezvous '{Rendezvous}', relay '{Relay}', base URL {BaseUrl}",
                 settingsPath, config.Node.Rendezvous, config.Node.RelayFallback, config.Server.BaseUrl);
             ushort port = Singletons.PortSetOnCommandLine ? Singletons.Port : config.Server.Port;
 
-            logger.LogInformation("OVS Rollback Node version {Version}, engine built {CompileTime}", Statics.OVSRollbackVersion, CompileTime.CompileDateTime);
+            logger.LogInformation("OVS Rollback Node version {Version}, engine built {CompileTime}", engineVersion, CompileTime.CompileDateTime);
             if (config.Server.FireMatchEvents)
             {
                 logger.LogWarning("Server.FireMatchEvents is on; a node has no MatchUpdateKey, so every match event it sends will be rejected. Turn it off in appsettings.json.");

@@ -187,6 +187,13 @@ namespace OVS.Rollback.Utils
                         Key = key
                     },
                     returnBody: true);
+                if (string.IsNullOrWhiteSpace(body))
+                {
+                    // An empty answer is what a server that does not know the match sends (seen when a node asked the
+                    // wrong instance, 2026-10-03); say so instead of letting the JSON reader throw at byte 0.
+                    _logger.LogError("{LogPrefix} FetchMatchConfigAsync: empty answer from {Url} for match {MatchId}; does that server know this match?", LogPrefix, RegisterURL, matchId);
+                    return null;
+                }
                 return JsonSerializer.Deserialize(body, OVSJsonContext.Default.OVSMatchConfig);
             }
             catch (Exception ex)

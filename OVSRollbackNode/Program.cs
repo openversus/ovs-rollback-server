@@ -15,7 +15,34 @@ namespace OVS.Rollback.Node
         public static int Main(string[] args)
         {
             Environment.CurrentDirectory = AppContext.BaseDirectory;
+            ExportOptions(args);
             return Run(args);
+        }
+
+        /// <summary>
+        /// The "--option value" pairs as environment overrides, set before the engine is first touched: its module
+        /// initializer builds the configuration and the HTTP helper that fetches match configs, and the helper reads
+        /// Server__BaseUrl / OVS_SERVER right then (NodeHost.ApplyOptions, which runs after, is too late for it: seen
+        /// 2026-10-03 as a node asking the wrong server). Unknown options are left to ApplyOptions to report.
+        /// </summary>
+        private static void ExportOptions(string[] args)
+        {
+            for (int i = 0; i + 1 < args.Length; i++)
+            {
+                string value = args[i + 1];
+                switch (args[i])
+                {
+                    case "--server":
+                        string server = value.TrimEnd('/');
+                        Environment.SetEnvironmentVariable("Server__BaseUrl", server);
+                        Environment.SetEnvironmentVariable("OVS_SERVER", server);
+                        break;
+                    case "--rendezvous": Environment.SetEnvironmentVariable("Node__Rendezvous", value); break;
+                    case "--port-file": Environment.SetEnvironmentVariable("Node__PortFile", value); break;
+                    case "--parent-token": Environment.SetEnvironmentVariable("Node__ParentToken", value); break;
+                    case "--parent-timeout": Environment.SetEnvironmentVariable("Node__ParentTimeoutSeconds", value); break;
+                }
+            }
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
