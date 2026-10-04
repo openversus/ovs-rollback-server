@@ -18,6 +18,10 @@
 #
 # Needs the .NET 10 SDK; the image also needs Docker. The node is self-contained ReadyToRun, one file per platform, so
 # players install no runtime; the rendezvous is the same for the server it runs on.
+#
+# The node is locked (NodeLockdown): it trusts only configs signed with the private half of the public key in
+# OVSRollbackNode/node-config-public-key.txt, which must exist (OVSRollbackNode/tools/new-signing-key.sh makes a pair).
+# NODE_CONFIG_PUBLIC_KEY=<base64> overrides the file, NODE_SERVER=<url> the server it trusts (default prod).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -67,11 +71,19 @@ do_test() {
 # Linux is a first-class target (Steam Deck and desktop Linux players: the mod starts the ELF from inside Proton).
 do_node() {
     local rids=${*:-"win-x64 linux-x64"}
+    local key=${NODE_CONFIG_PUBLIC_KEY:-}
+    if [ -z "$key" ]; then
+        [ -f OVSRollbackNode/node-config-public-key.txt ] \
+            || fail "OVSRollbackNode/node-config-public-key.txt is missing: the node needs the server's public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a pair; the private half goes to the servers as P2P_NODE_SIGNING_KEY)"
+        key=$(tr -d '[:space:]' < OVSRollbackNode/node-config-public-key.txt)
+    fi
+    local server=()
+    [ -n "${NODE_SERVER:-}" ] && server=("-p:NodeServer=$NODE_SERVER")
     for rid in $rids; do
         say "publishing the node for $rid"
         dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r "$rid" --self-contained true \
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true \
-            -o "out/node-$rid" --nologo -v q
+            "-p:NodeConfigPublicKey=$key" "${server[@]}" -o "out/node-$rid" --nologo -v q
         local exe
         exe=$(ls "out/node-$rid" | grep -E '^OVS\.Rollback\.Node(\.exe)?$') || fail "out/node-$rid has no node executable"
         say "node $rid: out/node-$rid/$exe ($(du -sh "out/node-$rid" | cut -f1))"

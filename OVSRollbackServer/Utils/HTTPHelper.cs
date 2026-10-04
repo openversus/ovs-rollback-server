@@ -203,6 +203,26 @@ namespace OVS.Rollback.Utils
             }
         }
 
+        /// <summary>
+        /// The /ovs_register answer for a match as sent, with its X-OVS-Signature header (null when there is none), for
+        /// a caller that checks the signature before trusting the body (the P2P node). Null when the request failed.
+        /// </summary>
+        protected internal async Task<(byte[] Body, string? Signature)?> FetchSignedMatchConfigAsync(string matchId, string key)
+        {
+            try
+            {
+                using var response = await PostJsonAsync(RegisterURL, new RegisterPayload { MatchId = matchId, Key = key }, headers: new Dictionary<string, string>());
+                byte[] body = await response.Content.ReadAsByteArrayAsync();
+                string? signature = response.Headers.TryGetValues(Constants.SignatureHeader, out var values) ? values.FirstOrDefault() : null;
+                return (body, signature);
+            }
+            catch (Exception ex)
+            {
+                Log.FetchConfigFailed(_logger, matchId, ex);
+                return null;
+            }
+        }
+
         protected internal async Task SendEndMatchAsync(string matchId, string key)
         {
             try

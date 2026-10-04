@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "OVS Rollback Node Configuration",
-  "description": "The P2P node on a player's machine; NodeHost loads this file over the engine's appsettings.json beside it. Every section but Node is the engine's, as the server's appsettings.json has them; the differences: match events off (a player's machine holds no MatchUpdateKey), no MementoMori (the node lives as long as the game).",
+  "ConfigVersion": 1,
+  "description": "The P2P node on a player's machine; NodeHost loads this file over the engine's appsettings.json beside it. Every section but Node is the engine's, as the server's appsettings.json has them; the differences: match events off (a player's machine holds no MatchUpdateKey), no MementoMori (the node lives as long as the game). A release node has a copy of this file built in: the settings that are the same for everyone in a match (NodeScope.Fairness: the rift, input and timing sections, the network buffers) come from that copy or from the server's signed update, so editing them here changes nothing; the player's own settings (ports, logging, the rendezvous) are read from here as before. ConfigVersion: the oldest update version the node accepts.",
 
   "Server": {
     "Port": 41234,

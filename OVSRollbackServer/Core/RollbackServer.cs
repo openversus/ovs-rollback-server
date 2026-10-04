@@ -131,6 +131,13 @@ namespace OVS.Rollback.Core
         /// </summary>
         public void PreloadMatchConfig(string matchId, OVSMatchConfig config) => _preloadedConfigs[matchId] = config;
 
+        /// <summary>
+        /// Whether a match nobody preloaded fetches its own config from /ovs_register (the relay: always). The P2P node
+        /// turns it off: it checks the server's signature on every config and preloads the ones it trusts, so a match
+        /// it did not preload has no config here.
+        /// </summary>
+        public bool FetchUnloadedConfigs { get; set; } = true;
+
         public void Start()
         {
             if (_running)
@@ -466,7 +473,7 @@ namespace OVS.Rollback.Core
                 {
                     Log.NewMatch(_logger, matchData.MatchId);
 
-                    if (!_preloadedConfigs.TryRemove(matchData.MatchId, out config))
+                    if (!_preloadedConfigs.TryRemove(matchData.MatchId, out config) && FetchUnloadedConfigs)
                     {
                         config = await _httpHelper.FetchMatchConfigAsync(matchData.MatchId, matchData.Key);
                     }

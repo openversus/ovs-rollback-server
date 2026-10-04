@@ -17,6 +17,24 @@
          player's machine, which Steam's Linux runtime container is not known to provide. -->
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
+  <!-- The lockdown's build inputs (NodeBuild.cs reads them back). A locked node trusts one server, NodeServer, and only
+       configs signed with the private half of NodeConfigPublicKey (base64 SubjectPublicKeyInfo, ECDSA P-256); it has no
+       default, so a release build without it fails rather than trusting nothing or the wrong key. build.sh passes it from
+       node-config-public-key.txt. NodeUnlocked=true (the bench, and every Debug build) honors the player's own values
+       for every setting and the server from the command line; without a key it does not check signatures at all. -->
+  <PropertyGroup>
+    <NodeServer Condition="'$(NodeServer)' == ''">https://prod.openversus.org</NodeServer>
+    <NodeUnlocked Condition="'$(NodeUnlocked)' == '' and '$(Configuration)' == 'Debug'">true</NodeUnlocked>
+    <NodeUnlocked Condition="'$(NodeUnlocked)' == ''">false</NodeUnlocked>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="NodeServer" Value="$(NodeServer)" />
+    <AssemblyMetadata Include="NodeConfigPublicKey" Value="$(NodeConfigPublicKey)" />
+    <AssemblyMetadata Include="NodeUnlocked" Value="$(NodeUnlocked)" />
+  </ItemGroup>
+  <Target Name="RequireNodeConfigPublicKey" BeforeTargets="BeforeBuild" Condition="'$(NodeUnlocked)' != 'true' and '$(NodeConfigPublicKey)' == ''">
+    <Error Text="A locked node needs the server's public key: -p:NodeConfigPublicKey=&lt;base64 SubjectPublicKeyInfo&gt; (build.sh reads OVSRollbackNode/node-config-public-key.txt), or -p:NodeUnlocked=true for a bench build." />
+  </Target>
   <ItemGroup>
     <ProjectReference Include="../OVSRollbackServer/OVSRollbackServer.csproj" />
     <ProjectReference Include="../OVSRollbackP2P/OVSRollbackP2P.csproj" />
@@ -28,6 +46,8 @@
     <None Update="node.appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <!-- The same file inside the binary: the built-in values a locked node falls back to (NodeLockdown). -->
+    <EmbeddedResource Include="node.appsettings.json" LogicalName="node.appsettings.json" />
     <None Include="../OVSRollbackServer/Configuration/Logging/Runtime/serilog-config.json" Link="Configuration/Logging/Runtime/serilog-config.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

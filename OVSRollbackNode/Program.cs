@@ -17,6 +17,10 @@ namespace OVS.Rollback.Node
         {
             Environment.CurrentDirectory = AppContext.BaseDirectory;
             ExportOptions(args);
+            if (!NodeBuild.Unlocked)
+            {
+                PinServer();
+            }
             return Run(args);
         }
 
@@ -46,6 +50,18 @@ namespace OVS.Rollback.Node
                     case "--log-file": Environment.SetEnvironmentVariable("Logging__LogFilePath", value); break;
                 }
             }
+        }
+
+        /// <summary>
+        /// A locked node talks to the server it was built for, whatever --server or the environment say: the match
+        /// configs it hosts and its settings update come from there. Set here for the same reason as the options: the
+        /// engine reads its server once, at first touch.
+        /// </summary>
+        private static void PinServer()
+        {
+            Environment.SetEnvironmentVariable("Server__BaseUrl", NodeBuild.Server);
+            Environment.SetEnvironmentVariable("OVS_SERVER", NodeBuild.Server);
+            Environment.SetEnvironmentVariable("mvsi_server", null);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

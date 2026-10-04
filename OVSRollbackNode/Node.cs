@@ -50,7 +50,7 @@ namespace OVS.Rollback.Node
             public Role Role = Role.Unknown;
             public ushort HostIndex = PeersMessage.NoHost;
             public OVSMatchConfig? Config;
-            public Task<OVSMatchConfig?>? ConfigFetch;
+            public Task<ConfigAnswer>? ConfigFetch;
             public readonly Dictionary<ushort, PeerPath> Peers = [];
             public HashSet<ushort> Expected = [];
             public IPEndPoint? GameEndPoint;
@@ -67,6 +67,9 @@ namespace OVS.Rollback.Node
             public bool NotifyFallback;         // was the host and fell back: tell the peers on open paths
             public TimeSpan NoticesUntil, NextNotice;
         }
+
+        /// <summary>A match config fetch: the config when the server sent one this node trusts; why not, when it sent one it does not.</summary>
+        private sealed record ConfigAnswer(OVSMatchConfig? Config, string? Rejected);
 
         private readonly ILogger _log;
         private readonly ServerConfiguration _config;
@@ -135,6 +138,8 @@ namespace OVS.Rollback.Node
             }
             _port = (ushort)((IPEndPoint)_socket.LocalEndPoint!).Port;
             _engine = new RollbackServer(Utilities.NewLogger<RollbackServer>(), _socket, config.Server.MaxPlayers);
+            // Only the configs this node checked and preloaded (FetchConfigAsync); the engine fetching its own would skip the check.
+            _engine.FetchUnloadedConfigs = false;
             // The server tells the cloud a match started through its authenticated status events; a node has no
             // such key, so it posts the key-checked route the TS server has for this instead.
             _engine.MatchStarted += (matchId, key) => _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSMatchStarted, matchId, key);
@@ -400,7 +405,31 @@ namespace OVS.Rollback.Node
             var s = new Session(nc.MatchData.MatchId, nc.MatchData.Key, nc.PlayerData.PlayerIndex, now) { GameEndPoint = game };
             _session = s;
             _log.LogInformation("Match {Match}: the game at {Game} is player {Index}; fetching the match config", s.MatchId, game, s.MyIndex);
-            s.ConfigFetch = Singletons.SharedHTTPHelper.FetchMatchConfigAsync(s.MatchId, s.Key);
+            s.ConfigFetch = FetchConfigAsync(s.MatchId, s.Key);
+        }
+
+        /// <summary>The match config from /ovs_register, taken only with the server's signature (NodeLockdown.Trusted).</summary>
+        private async Task<ConfigAnswer> FetchConfigAsync(string matchId, string key)
+        {
+            var answer = await Singletons.SharedHTTPHelper.FetchSignedMatchConfigAsync(matchId, key);
+            if (answer is not { } a || a.Body.All(b => b is (byte)' ' or (byte)'\t' or (byte)'\r' or (byte)'\n'))
+            {
+                // Nothing, or the empty answer of a server that does not know the match.
+                return new ConfigAnswer(null, null);
+            }
+            if (!NodeLockdown.Trusted(a.Body, a.Signature, out string why))
+            {
+                return new ConfigAnswer(null, why);
+            }
+            try
+            {
+                return new ConfigAnswer(System.Text.Json.JsonSerializer.Deserialize(a.Body, OVSJsonContext.Default.OVSMatchConfig), null);
+            }
+            catch (System.Text.Json.JsonException e)
+            {
+                _log.LogError("Match {Match}: the match config could not be read: {Error}", matchId, e.Message);
+                return new ConfigAnswer(null, null);
+            }
         }
 
         private void Tick(TimeSpan now)
@@ -427,7 +456,7 @@ namespace OVS.Rollback.Node
                     if (s.ConfigFetch is { IsCompleted: true } fetch)
                     {
                         s.ConfigFetch = null;
-                        Resolve(s, fetch.IsCompletedSuccessfully ? fetch.Result : null, now);
+                        Resolve(s, fetch.IsCompletedSuccessfully ? fetch.Result : new ConfigAnswer(null, null), now);
                     }
                     break;
 
@@ -498,8 +527,19 @@ namespace OVS.Rollback.Node
             }
         }
 
-        private void Resolve(Session s, OVSMatchConfig? config, TimeSpan now)
+        private void Resolve(Session s, ConfigAnswer answer, TimeSpan now)
         {
+            if (answer.Rejected is { } why)
+            {
+                // Hosting on a config the server did not sign would let anyone between it and this node decide the match;
+                // the relay fetches its own. The peers follow at their punch deadline (or the host's notice).
+                _log.LogWarning("Match {Match}: the match config is not used: {Why}", s.MatchId, why);
+                s.Role = Role.Forwarder;
+                s.Phase = Phase.Punching;
+                FallBack(s, "no trusted match config");
+                return;
+            }
+            var config = answer.Config;
             if (config is null)
             {
                 _log.LogError("Match {Match}: no match config from {Url}; the game will time out", s.MatchId, Singletons.SharedHTTPHelper.RegisterURL);

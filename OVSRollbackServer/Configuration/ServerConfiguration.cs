@@ -445,13 +445,21 @@ namespace OVS.Rollback.Configuration
     // Configuration section classes
     public class ServerSettings
     {
+        [NodeScope(NodeScope.Player)]
         public ushort Port { get; set; } = 8080;
+        [NodeScope(NodeScope.Fairness)]
         public int MaxPlayers { get; set; } = 6;
+        [NodeScope(NodeScope.Build)]
         public string BaseUrl { get; set; } = String.Empty;
+        [NodeScope(NodeScope.Player)]
         public string HostName { get; set; } = String.Empty;
+        [NodeScope(NodeScope.Player)]
         public bool FireMatchEvents { get; set; } = true;
+        [NodeScope(NodeScope.Player)]
         public string MatchUpdateKey { get; set; } = String.Empty;
+        [NodeScope(NodeScope.Player)]
         public bool VerboseLogging { get; set; } = false;
+        [NodeScope(NodeScope.Player)]
         public bool MementoMori { get; set; } = true;
     }
 
@@ -462,21 +470,26 @@ namespace OVS.Rollback.Configuration
     public class NodeSettings
     {
         /// <summary>The rendezvous service, as host:port (UDP). Empty disables P2P: every match is forwarded to RelayFallback.</summary>
+        [NodeScope(NodeScope.Player)]
         public string Rendezvous { get; set; } = String.Empty;
         /// <summary>
         /// Bench only: a fixed relay (host:port) used when no peer path opens, instead of asking the server for
         /// one (/ovs_p2p_failed, which deploys the match's relay and answers with its address). Empty on players.
         /// </summary>
+        [NodeScope(NodeScope.Player)]
         public string RelayFallback { get; set; } = String.Empty;
         /// <summary>Testing only: "host" or "forwarder" takes the role regardless of the match config; empty follows is_host.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public string ForceRole { get; set; } = String.Empty;
         /// <summary>Seconds of probing, counted from when a peer's address is known, before it is given up on.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int PunchTimeoutSeconds { get; set; } = 8;
         /// <summary>
         /// Seconds after the local game first connected by which every peer must have been reached, else
         /// RelayFallback; a peer whose game is still on the perk screen has not registered yet. The game itself
         /// waits 45 s for its server, so this leaves it time to reach the relay.
         /// </summary>
+        [NodeScope(NodeScope.Fairness)]
         public int PunchDeadlineSeconds { get; set; } = 30;
         /// <summary>
         /// Seconds past PunchDeadlineSeconds after which a forwarder whose path to the host opened but which has had
@@ -484,37 +497,50 @@ namespace OVS.Rollback.Configuration
         /// peers; this covers a lost notice or a host that died). Must leave the game time to reach the relay within
         /// its own 45 s.
         /// </summary>
+        [NodeScope(NodeScope.Fairness)]
         public int ForwarderGraceSeconds { get; set; } = 5;
         /// <summary>Milliseconds between probes to each candidate address while punching.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int ProbeIntervalMilliseconds { get; set; } = 100;
         /// <summary>Milliseconds between registrations with the rendezvous until every peer is known.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int RegisterIntervalMilliseconds { get; set; } = 500;
         /// <summary>Milliseconds between keepalives on an open peer path (keeps the NAT mapping during pre-match waits).</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int KeepAliveIntervalMilliseconds { get; set; } = 1000;
         /// <summary>Seconds without anything from a peer before its path is considered lost.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int PeerTimeoutSeconds { get; set; } = 30;
         /// <summary>Seconds without anything from the local game before the node forgets the match and waits for the next.</summary>
+        [NodeScope(NodeScope.Fairness)]
         public int GameTimeoutSeconds { get; set; } = 60;
         /// <summary>
         /// A file to write the UDP port the node actually listens on (one line, the number), once bound. The mod
         /// that starts the node reads it and reports the port to the server. Empty writes nothing.
         /// </summary>
+        [NodeScope(NodeScope.Player)]
         public string PortFile { get; set; } = String.Empty;
         /// <summary>
         /// The watchdog token, a decimal unsigned 64-bit number. When set, the process that started the node must
         /// send a Parent keepalive carrying it (P2P protocol, over loopback) at least every ParentTimeoutSeconds, or
         /// the node exits: a game that crashed takes its node with it. Empty means no watchdog.
         /// </summary>
+        [NodeScope(NodeScope.Player)]
         public string ParentToken { get; set; } = String.Empty;
         /// <summary>Seconds without a Parent keepalive before the node exits (when ParentToken is set).</summary>
+        [NodeScope(NodeScope.Player)]
         public int ParentTimeoutSeconds { get; set; } = 10;
     }
 
     public class PerformanceSettings
     {
+        [NodeScope(NodeScope.Fairness)]
         public int SpinThresholdMicroseconds { get; set; } = 500;
+        [NodeScope(NodeScope.Fairness)]
         public bool UseAdaptiveSpinThreshold { get; set; } = true;
+        [NodeScope(NodeScope.Player)]
         public int MetricsSamplingInterval { get; set; } = 10;
+        [NodeScope(NodeScope.Fairness)]
         public int TargetFrameRate { get; set; } = 60;
         /// <summary>
         /// Free RAM below which a garbage collection is worth forcing, **in megabytes** — the same
@@ -522,18 +548,25 @@ namespace OVS.Rollback.Configuration
         /// environment variable. A consumer needs bytes: multiply by `1024L * 1024L`, in long,
         /// because megabytes above 2047 overflow a 32-bit byte count.
         /// </summary>
+        [NodeScope(NodeScope.Player)]
         public int GarbageCollectionFreeRAMThreshold { get; set; } = 1024;
     }
 
     public class NetworkingSettings
     {
+        [NodeScope(NodeScope.Fairness)]
         public int ReceiveBufferSize { get; set; } = 65536;
+        [NodeScope(NodeScope.Fairness)]
         public int SendBufferSize { get; set; } = 65536;
+        [NodeScope(NodeScope.Player)]
         public int DscpValue { get; set; } = 46;
+        [NodeScope(NodeScope.Player)]
         public bool DontFragment { get; set; } = true;
+        [NodeScope(NodeScope.Fairness)]
         public int HttpTimeoutSeconds { get; set; } = 5;
     }
 
+    [NodeScope(NodeScope.Fairness)]
     public class GameLogicSettings
     {
         public int DisconnectTimeoutSeconds { get; set; } = 45;
@@ -545,6 +578,7 @@ namespace OVS.Rollback.Configuration
         public uint MissToleranceFrames { get; set; } = 10;
     }
 
+    [NodeScope(NodeScope.Fairness)]
     public class RiftCalculationSettings
     {
         public float PingAlpha { get; set; } = 0.15f;
@@ -590,12 +624,14 @@ namespace OVS.Rollback.Configuration
         public bool HostPingParity { get; set; } = false;
     }
 
+    [NodeScope(NodeScope.Fairness)]
     public class PingPhaseSettings
     {
         public uint TotalPings { get; set; } = 20;
         public int PingIntervalMilliseconds { get; set; } = 50;
     }
 
+    [NodeScope(NodeScope.Fairness)]
     public class InputValidationSettings
     {
         public bool EnableRateLimiting { get; set; } = true;
@@ -604,6 +640,7 @@ namespace OVS.Rollback.Configuration
         public uint InputLookbackFrames { get; set; } = 200;
     }
 
+    [NodeScope(NodeScope.Fairness)]
     public class DesyncDetectionSettings
     {
         public bool EnableDesyncDetection { get; set; } = true;
@@ -618,6 +655,7 @@ namespace OVS.Rollback.Configuration
         public int MaxDesyncCount { get; set; } = 10;
     }
 
+    [NodeScope(NodeScope.Player)]
     public class LoggingSettings
     {
         public string MinimumLevel { get; set; } = "Information";

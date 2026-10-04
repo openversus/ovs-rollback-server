@@ -32,6 +32,12 @@ namespace OVS.Rollback.Core
             public const uint OffInterval = 0x0000CE58;
         }
 
+        /// <summary>
+        /// The response header carrying the server's signature over the exact body bytes (ECDSA P-256, SHA-256, IEEE
+        /// P1363 r||s, base64), on /ovs_register and /ovs_node_config; the P2P node checks it, a relay ignores it.
+        /// </summary>
+        public const string SignatureHeader = "X-OVS-Signature";
+
         public static class Endpoints
         {
             internal const string OVSRegister = "/ovs_register";
@@ -43,6 +49,8 @@ namespace OVS.Rollback.Core
             internal const string OVSP2PReady = "/ovs_p2p_ready";
             /// <summary>Match id + key: no peer path opened; the server deploys the relay (once) and answers {host, port}.</summary>
             internal const string OVSP2PFailed = "/ovs_p2p_failed";
+            /// <summary>GET: the signed settings update for P2P nodes, {"version": N, "config": {sections}}.</summary>
+            internal const string OVSNodeConfig = "/ovs_node_config";
             internal const string MVSIRegister = "/mvsi_register";
             internal const string MVSIEndMatch = "/mvsi_end_match";
         }
