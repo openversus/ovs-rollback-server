@@ -47,7 +47,7 @@ namespace OVS.Rollback.Node
             }
             if (string.IsNullOrWhiteSpace(config.Node.Rendezvous))
             {
-                logger.LogWarning("Node.Rendezvous is not set: every match will go to a relay (the server's, or Node.RelayFallback).");
+                logger.LogWarning("Node.Rendezvous is not set: every match with another human player will go to a relay (the server's, or Node.RelayFallback); a match against bots alone is served here.");
             }
             if (config.RiftCalculation.HostPingParity)
             {

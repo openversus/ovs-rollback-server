@@ -490,23 +490,24 @@ namespace OVS.Rollback.Node
                 _engine.PreloadMatchConfig(s.MatchId, config);
             }
 
-            if (_rendezvous is null)
-            {
-                // No P2P at all: everyone goes to the relay, host included (the relay is the engine for this match).
-                s.Role = Role.Forwarder;
-                s.Phase = Phase.Punching;
-                FallBack(s, "no rendezvous configured");
-                return;
-            }
-
             if (s.Role == Role.Host && s.Expected.Count == 0)
             {
-                // The only human (one player against bots): no peer to punch to or wait for, so no rendezvous either.
-                // Without this the host waits for a probe ack that never comes and falls back at the punch deadline.
+                // The only human (one player against bots): no peer to punch to or wait for, so neither a rendezvous nor a
+                // relay is needed, with or without one configured. Without this the host waits for a probe ack that never
+                // comes and falls back at the punch deadline.
                 s.PeersComplete = true;
                 s.Phase = Phase.Serving;
                 _log.LogInformation("Match {Match}: no other human player; the engine serves this match at once", s.MatchId);
                 _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSP2PReady, s.MatchId, s.Key);
+                return;
+            }
+
+            if (_rendezvous is null)
+            {
+                // No P2P with other players: everyone goes to the relay, host included (the relay is the engine for this match).
+                s.Role = Role.Forwarder;
+                s.Phase = Phase.Punching;
+                FallBack(s, "no rendezvous configured");
                 return;
             }
 
