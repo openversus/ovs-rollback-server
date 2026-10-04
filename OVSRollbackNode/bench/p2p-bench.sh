@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# Two synthetic players, each behind its own P2P node, on the local bench.
+# Synthetic players, each behind its own P2P node, on the local bench.
 #
 #   p2p-bench.sh up        publish the node and the rendezvous, start the rendezvous on this machine (UDP 41235),
-#                          start synthetic players 1 and 2 (they queue 1v1 and match each other), and start a node
-#                          in each player's network namespace; the player connects to 127.0.0.1:57000, its node.
+#                          start synthetic players $PLAYERS (default "1 2": they queue 1v1 and match each other), and
+#                          start a node in each player's network namespace; the player connects to 127.0.0.1:57000,
+#                          its node, and reports that port at /api/identify as the client does.
+#                          Per-player settings: SYNTHETIC_ARGS_N (exported), e.g. SYNTHETIC_ARGS_3="--Queue:Mode casual".
 #   p2p-bench.sh logs N    follow player N's node
 #   p2p-bench.sh rdv       follow the rendezvous
 #   p2p-bench.sh down      stop the nodes, the players and the rendezvous
@@ -62,13 +64,13 @@ case "${1:-}" in
       echo "node (this machine): pid $! on UDP $GAME_PORT, log $LOGS/node-me.log"
       PLAYERS=1
     else
-      PLAYERS="1 2"
+      PLAYERS=${PLAYERS:-1 2}
     fi
     # The players: each connects to its own loopback instead of the address the notification names. A host node
     # answers its game only once every peer path is open, and a real game sends its first NewConnection some 15 s
     # after the perks lock (map loading); the synthetic connects at once, so it waits like the real game does (45 s).
     # shellcheck disable=SC2086
-    SYNTHETIC_ARGS="${SYNTHETIC_ARGS:-} --Rollback:Host 127.0.0.1 --Rollback:ConnectTimeoutSeconds 45" "$SYNTHETIC/run.sh" up $PLAYERS
+    SYNTHETIC_ARGS="${SYNTHETIC_ARGS:-} --Rollback:Host 127.0.0.1 --Rollback:ConnectTimeoutSeconds 45 --Node:Port $GAME_PORT" "$SYNTHETIC/run.sh" up $PLAYERS
     GW=$(gateway)
     RDV="$GW:$RDV_PORT"; [ "${NO_RDV:-}" = 1 ] && RDV="$GW:9"
     for n in $PLAYERS; do
@@ -92,7 +94,9 @@ case "${1:-}" in
     tail -f "$LOGS/rendezvous.log"
     ;;
   down)
-    for n in 1 2; do docker rm -f "$IMAGE-$n" >/dev/null 2>&1 || true; done
+    ids=$(docker ps -aq --filter "name=^$IMAGE-")
+    # shellcheck disable=SC2086
+    [ -n "$ids" ] && docker rm -f $ids >/dev/null
     "$SYNTHETIC/run.sh" down
     if [ -f "$LOGS/rendezvous.pid" ]; then kill "$(cat "$LOGS/rendezvous.pid")" 2>/dev/null || true; rm -f "$LOGS/rendezvous.pid"; fi
     echo "stopped"

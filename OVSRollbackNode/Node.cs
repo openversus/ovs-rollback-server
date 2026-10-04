@@ -499,6 +499,17 @@ namespace OVS.Rollback.Node
                 return;
             }
 
+            if (s.Role == Role.Host && s.Expected.Count == 0)
+            {
+                // The only human (one player against bots): no peer to punch to or wait for, so no rendezvous either.
+                // Without this the host waits for a probe ack that never comes and falls back at the punch deadline.
+                s.PeersComplete = true;
+                s.Phase = Phase.Serving;
+                _log.LogInformation("Match {Match}: no other human player; the engine serves this match at once", s.MatchId);
+                _ = Singletons.SharedHTTPHelper.PostMatchKeyedAsync(Constants.Endpoints.OVSP2PReady, s.MatchId, s.Key);
+                return;
+            }
+
             foreach (var index in s.Expected)
             {
                 s.Peers[index] = new PeerPath(s.MyIndex, index, s.Hash, _puncher, now);
