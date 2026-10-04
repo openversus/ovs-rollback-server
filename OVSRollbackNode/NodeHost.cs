@@ -22,6 +22,9 @@ namespace OVS.Rollback.Node
             // engine's own lines (loggers made after initialization) were fine (2026-10-03). A non-generic member is a
             // call into the engine, and the version is one worth having anyway.
             string engineVersion = Statics.OVSRollbackVersion;
+            // Players' addresses are masked in everything logged from here on (AddressMask): this log is what a player
+            // shares for support. Nothing before this line knows any.
+            AddressMask.Enable();
             var logger = Utilities.NewLogger<Node>();
             // The options reached the environment in Program.Main, before the engine was first touched (its module
             // initializer builds the HTTP helper that fetches match configs, which reads OVS_SERVER right then; exporting
@@ -35,6 +38,11 @@ namespace OVS.Rollback.Node
             {
                 return 2;
             }
+            // OVS's own endpoints stay readable where the settings give them as addresses (the bench; prod uses names).
+            AddressMask.AddInfra(config.Node.Rendezvous);
+            AddressMask.AddInfra(config.Node.RelayFallback);
+            AddressMask.AddInfra(config.Server.BaseUrl);
+            AddressMask.AddInfra(Singletons.SharedHTTPHelper.BaseUrl);
             logger.LogInformation("Match configs and reports go to {Server} (register URL {RegisterUrl})", Singletons.SharedHTTPHelper.BaseUrl, Singletons.SharedHTTPHelper.RegisterURL);
             logger.LogInformation("Node settings from {Path} and the command line: rendezvous '{Rendezvous}', relay '{Relay}', base URL {BaseUrl}",
                 settingsPath, config.Node.Rendezvous, config.Node.RelayFallback, config.Server.BaseUrl);
@@ -123,6 +131,9 @@ namespace OVS.Rollback.Node
                         break;
                     case "--rendezvous":
                         config.Node.Rendezvous = value;
+                        break;
+                    case "--log-file":
+                        // Already in use: Program.Main exported it, and the engine opened the file at first touch.
                         break;
                     default:
                         logger.LogError("Unknown option {Option}", name);

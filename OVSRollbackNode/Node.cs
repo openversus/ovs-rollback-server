@@ -100,6 +100,8 @@ namespace OVS.Rollback.Node
                 TimeSpan.FromSeconds(Math.Max(5, _settings.PeerTimeoutSeconds)));
             _rendezvous = LocalCandidates.Parse(_settings.Rendezvous);
             _relay = LocalCandidates.Parse(_settings.RelayFallback);
+            AddressMask.AddInfra(_rendezvous);
+            AddressMask.AddInfra(_relay);
             if (!string.IsNullOrWhiteSpace(_settings.Rendezvous) && _rendezvous is null)
                 _log.LogError("Node.Rendezvous {Value} does not resolve; P2P is off until it does", _settings.Rendezvous);
             if (!string.IsNullOrWhiteSpace(_settings.RelayFallback) && _relay is null)
@@ -490,6 +492,7 @@ namespace OVS.Rollback.Node
                 else
                 {
                     s.Relay = relay;
+                    AddressMask.AddInfra(relay);
                     UseTarget(s, relay, relay: true);
                 }
             }
@@ -569,7 +572,11 @@ namespace OVS.Rollback.Node
                 s.PublicEndPoint = peers.YourPublicEndPoint;
                 _log.LogInformation("Match {Match}: this node's public address is {Public}", s.MatchId, s.PublicEndPoint);
             }
-            if (peers.Relay is not null) s.Relay = peers.Relay;
+            if (peers.Relay is not null)
+            {
+                s.Relay = peers.Relay;
+                AddressMask.AddInfra(peers.Relay);
+            }
 
             foreach (var peer in peers.Peers)
             {

@@ -1,8 +1,9 @@
 // Program.cs: OVS.Rollback.Node [port] [--port-file FILE] [--parent-token N] [--parent-timeout SECONDS] [--server URL] [--rendezvous HOST:PORT]
+//                               [--log-file FILE]
 //
-// The options override node.appsettings.json and the environment (Node__* / Server__BaseUrl); the mod that starts
-// the node passes its settings this way because, under Proton, Wine's "start /unix" hands a Linux program the
-// Unix environment, not the Windows one (checked 2026-10-03), while the command line crosses intact.
+// The options override node.appsettings.json and the environment (Node__* / Server__BaseUrl / Logging__LogFilePath);
+// the mod that starts the node passes its settings this way because, under Proton, Wine's "start /unix" hands a Linux
+// program the Unix environment, not the Windows one (checked 2026-10-03), while the command line crosses intact.
 //
 // The engine's assembly loads its configuration from the working directory the moment it is first touched, so
 // Main only moves there and hands over; nothing in it may name an engine type.
@@ -23,7 +24,8 @@ namespace OVS.Rollback.Node
         /// The "--option value" pairs as environment overrides, set before the engine is first touched: its module
         /// initializer builds the configuration and the HTTP helper that fetches match configs, and the helper reads
         /// Server__BaseUrl / OVS_SERVER right then (NodeHost.ApplyOptions, which runs after, is too late for it: seen
-        /// 2026-10-03 as a node asking the wrong server). Unknown options are left to ApplyOptions to report.
+        /// 2026-10-03 as a node asking the wrong server). The log file is decided at that touch too (Utilities.LogPath),
+        /// so --log-file can only travel this way. Unknown options are left to ApplyOptions to report.
         /// </summary>
         private static void ExportOptions(string[] args)
         {
@@ -41,6 +43,7 @@ namespace OVS.Rollback.Node
                     case "--port-file": Environment.SetEnvironmentVariable("Node__PortFile", value); break;
                     case "--parent-token": Environment.SetEnvironmentVariable("Node__ParentToken", value); break;
                     case "--parent-timeout": Environment.SetEnvironmentVariable("Node__ParentTimeoutSeconds", value); break;
+                    case "--log-file": Environment.SetEnvironmentVariable("Logging__LogFilePath", value); break;
                 }
             }
         }

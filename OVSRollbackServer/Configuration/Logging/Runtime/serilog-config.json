@@ -27,7 +27,7 @@
         "Name": "Console",
         "Args": {
           "formatter": {
-            "type": "Serilog.Templates.ExpressionTemplate, Serilog.Expressions",
+            "type": "Serilog.Templates.AddressMaskingTemplate, OVS.Rollback.Server",
             "template": "[{@t:yyyy-MM-ddTHH:mm:ss}][{@l:u3}] {Substring(SourceContext, LastIndexOf(SourceContext, '.') + 1)}(): {@m} \n{@x}",
             "theme": "Serilog.Templates.Themes.CustomThemes::Sixteenish, OVS.Rollback.Server"
           },
@@ -42,7 +42,7 @@
               "Name": "File",
               "Args": {
                 "formatter": {
-                  "type": "Serilog.Templates.ExpressionTemplate, Serilog.Expressions",
+                  "type": "Serilog.Templates.AddressMaskingTemplate, OVS.Rollback.Server",
                   "template": "[{@t:yyyy-MM-dd HH:mm:ss.fff zzz}][{@l:u3}] {SourceContext}(): {@m:lj} \n{@x}"
                 },
                 "path": "__DO_NOT_EDIT_PLACEHOLDER_PATH__",
