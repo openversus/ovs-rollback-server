@@ -33,10 +33,10 @@ GAME_PORT=${GAME_PORT:-57000}
 LOGS=${LOGS:-/tmp/p2p-bench}
 mkdir -p "$LOGS"
 
-# The bench's nodes are unlocked (every per-node override above keeps working) and trust the bench's own key pair in the
-# dev folder, made here on first use; the bench servers sign with its private half (ovs-http-server's bench.sh passes
-# P2P_NODE_SIGNING_KEY_FILE to the TS server and C# match flow).
-BENCH_KEYS=${BENCH_KEYS:-$HOME/git/ovs-local-dev/bench-keys}
+# The bench's nodes are unlocked (every per-node override above keeps working) and trust the bench's own key pair,
+# local/pki/bench (made here on first use if missing); the bench servers sign with its private half (ovs-http-server's
+# bench.sh passes P2P_NODE_SIGNING_KEY_FILE to the TS server and C# match flow).
+BENCH_KEYS=${BENCH_KEYS:-local/pki/bench}
 publish() {
   [ -f "$BENCH_KEYS/node-config-public-key.txt" ] || OVSRollbackNode/tools/new-signing-key.sh "$BENCH_KEYS" >/dev/null
   dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r linux-x64 --self-contained false -p:PublishReadyToRun=false \

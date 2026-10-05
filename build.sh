@@ -20,8 +20,9 @@
 # players install no runtime; the rendezvous is the same for the server it runs on.
 #
 # The node is locked (NodeLockdown): it trusts only configs signed with the private half of the public key in
-# OVSRollbackNode/node-config-public-key.txt, which must exist (OVSRollbackNode/tools/new-signing-key.sh makes a pair).
-# NODE_CONFIG_PUBLIC_KEY=<base64> overrides the file, NODE_SERVER=<url> the server it trusts (default prod).
+# pki/$NODE_PKI/node-config-public-key.txt (NODE_PKI defaults to prod; OVSRollbackNode/tools/new-signing-key.sh makes a
+# pair, and only the public half is committed). NODE_CONFIG_PUBLIC_KEY=<base64> overrides the file, NODE_SERVER=<url>
+# the server the node trusts (default prod: set it too for any other key, e.g. NODE_PKI=testing).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -73,9 +74,14 @@ do_node() {
     local rids=${*:-"win-x64 linux-x64"}
     local key=${NODE_CONFIG_PUBLIC_KEY:-}
     if [ -z "$key" ]; then
-        [ -f OVSRollbackNode/node-config-public-key.txt ] \
-            || fail "OVSRollbackNode/node-config-public-key.txt is missing: the node needs the server's public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a pair; the private half goes to the servers as P2P_NODE_SIGNING_KEY)"
-        key=$(tr -d '[:space:]' < OVSRollbackNode/node-config-public-key.txt)
+        local file="pki/${NODE_PKI:-prod}/node-config-public-key.txt"
+        [ -f "$file" ] \
+            || fail "$file is missing: the node needs the server's public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a pair; the private half goes to the servers as P2P_NODE_SIGNING_KEY_FILE)"
+        key=$(tr -d '[:space:]' < "$file")
+    fi
+    # Another environment's key beside prod's URL would make a node that refuses everything prod sends.
+    if [ "${NODE_PKI:-prod}" != prod ] && [ -z "${NODE_SERVER:-}" ]; then
+        fail "NODE_PKI=$NODE_PKI needs NODE_SERVER=<that environment's server URL>; the default is prod's"
     fi
     local server=()
     [ -n "${NODE_SERVER:-}" ] && server=("-p:NodeServer=$NODE_SERVER")
