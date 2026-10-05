@@ -554,10 +554,12 @@ namespace OVS.Rollback.Configuration
 
     public class NetworkingSettings
     {
+        /// <summary>UDP receive buffer asked for, in bytes (the game client's own is 1 MB); 0 or less: the system's default.</summary>
         [NodeScope(NodeScope.Fairness)]
-        public int ReceiveBufferSize { get; set; } = 65536;
+        public int ReceiveBufferSize { get; set; } = 1048576;
+        /// <summary>UDP send buffer asked for, in bytes; 0 or less: the system's default.</summary>
         [NodeScope(NodeScope.Fairness)]
-        public int SendBufferSize { get; set; } = 65536;
+        public int SendBufferSize { get; set; } = 1048576;
         [NodeScope(NodeScope.Player)]
         public int DscpValue { get; set; } = 46;
         [NodeScope(NodeScope.Player)]

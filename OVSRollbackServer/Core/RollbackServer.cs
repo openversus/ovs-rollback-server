@@ -183,7 +183,7 @@ namespace OVS.Rollback.Core
             if (_ownsReceiveLoop)
             {
                 // Apply low-latency socket options (DSCP EF, buffers, DontFragment), then bind and receive.
-                SocketConfigurator.ConfigureForLowLatency(_socket, _logger);
+                SocketConfigurator.ConfigureForLowLatency(_socket, _logger, ServerConfiguration.Instance.Networking);
                 _socket.Bind(new IPEndPoint(IPAddress.Any, _port));
                 _udpTask = Task.Run(RunUdpServerAsync);
             }

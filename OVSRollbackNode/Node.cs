@@ -121,7 +121,7 @@ namespace OVS.Rollback.Node
 
             _socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             UdpSockets.IgnoreConnectionReset(_socket);
-            SocketConfigurator.ConfigureForLowLatency(_socket, _log);
+            SocketConfigurator.ConfigureForLowLatency(_socket, _log, config.Networking);
             // Port 0 asks for any free port (the mod reports the one taken through Node.PortFile and /identify).
             try
             {

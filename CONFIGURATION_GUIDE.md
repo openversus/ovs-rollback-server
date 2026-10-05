@@ -34,8 +34,8 @@ The OVS Rollback Server now supports a comprehensive configuration system with:
   },
   
   "Networking": {
-    "ReceiveBufferSize": 65536,
-    "SendBufferSize": 65536,
+    "ReceiveBufferSize": 1048576,
+    "SendBufferSize": 1048576,
     "DscpValue": 46,
     "DontFragment": true,
     "HttpTimeoutSeconds": 5
@@ -304,8 +304,8 @@ dotnet OVSRollbackServer.dll
 ### Networking Settings
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `ReceiveBufferSize` | int | 65536 | UDP socket receive buffer (bytes) |
-| `SendBufferSize` | int | 65536 | UDP socket send buffer (bytes) |
+| `ReceiveBufferSize` | int | 1048576 | UDP socket receive buffer asked for (bytes; the game client's is 1 MB). Linux caps it at `net.core.rmem_max` (212992 on a stock kernel): the startup log says what was granted |
+| `SendBufferSize` | int | 1048576 | UDP socket send buffer asked for (bytes); Linux caps it at `net.core.wmem_max` |
 | `DscpValue` | int | 46 | DSCP marking for QoS (EF = 46) |
 | `DontFragment` | bool | true | Set DF bit in IP header |
 | `HttpTimeoutSeconds` | int | 5 | HTTP client timeout for match service |
