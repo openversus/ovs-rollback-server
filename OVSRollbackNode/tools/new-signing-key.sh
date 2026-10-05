@@ -4,9 +4,9 @@
 #   DIR/node-config-signing-key.pem   the private key (PKCS#8 PEM). The servers sign with it: P2P_NODE_SIGNING_KEY in
 #                                     their environment, the PEM text itself. Keep it off every machine but the servers.
 #   DIR/node-config-public-key.txt    the public key (base64 SubjectPublicKeyInfo, one line). Nodes are built with it:
-#                                     build.sh reads pki/<env>/node-config-public-key.txt (committed: it is public;
-#                                     NODE_PKI picks the env, prod by default); the bench passes local/pki/bench's
-#                                     with -p:NodeConfigPublicKey.
+#                                     build.sh reads pki/<env>/node-config-public-key.txt (committed: it is public),
+#                                     with pki/<env>/server-url.txt beside it, for each env in NODE_PKI ("prod
+#                                     testing" by default); the bench passes local/pki/bench's with -p:NodeTrust.
 #
 # A node built with one pair's public key trusts only configs signed with that pair's private key.
 set -euo pipefail

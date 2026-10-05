@@ -36,7 +36,10 @@ namespace OVS.Rollback.Node
             var config = Singletons.Config;
             // OVS's own endpoints stay readable where the settings give them as addresses (the bench; prod uses names).
             // Before the options, whose warnings can name the server this node was built for.
-            AddressMask.AddInfra(NodeBuild.Server);
+            foreach (var trusted in NodeBuild.Trust)
+            {
+                AddressMask.AddInfra(trusted.Server);
+            }
             AddressMask.AddInfra(config.Node.Rendezvous);
             AddressMask.AddInfra(config.Node.RelayFallback);
             AddressMask.AddInfra(config.Server.BaseUrl);
@@ -44,6 +47,14 @@ namespace OVS.Rollback.Node
             if (!ApplyOptions(args, config, logger))
             {
                 return 2;
+            }
+            if (!NodeBuild.Unlocked)
+            {
+                logger.LogInformation("This node trusts {Servers}; this run uses {Server}", string.Join(", ", NodeBuild.Trust.Select(t => t.Server)), NodeBuild.Server);
+                if (NodeBuild.Requested is { } requested && !NodeBuild.Matched)
+                {
+                    logger.LogWarning("The server {Requested} is not one this node trusts, so it uses {Server}: a match from {Requested} will not find its config here", requested, NodeBuild.Server, requested);
+                }
             }
             // Before anything reads a setting that is the same for everyone in a match (the engine and the socket are
             // made below).
@@ -132,13 +143,10 @@ namespace OVS.Rollback.Node
                         config.Node.ParentTimeoutSeconds = seconds;
                         break;
                     case "--server":
+                        // A locked node's server was chosen from this in Program.Main (NodeBuild.Select) and pinned there.
                         if (NodeBuild.Unlocked)
                         {
                             config.Server.BaseUrl = value;
-                        }
-                        else if (!string.Equals(value.TrimEnd('/'), NodeBuild.Server, StringComparison.OrdinalIgnoreCase))
-                        {
-                            logger.LogWarning("--server {Server} is ignored: this node only talks to {Built}, the server it was built for; a match from another server will not find its config here", value, NodeBuild.Server);
                         }
                         break;
                     case "--rendezvous":

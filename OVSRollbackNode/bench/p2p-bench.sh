@@ -40,7 +40,7 @@ BENCH_KEYS=${BENCH_KEYS:-local/pki/bench}
 publish() {
   [ -f "$BENCH_KEYS/node-config-public-key.txt" ] || OVSRollbackNode/tools/new-signing-key.sh "$BENCH_KEYS" >/dev/null
   dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r linux-x64 --self-contained false -p:PublishReadyToRun=false \
-    -p:NodeUnlocked=true "-p:NodeConfigPublicKey=$(tr -d '[:space:]' < "$BENCH_KEYS/node-config-public-key.txt")" -o out/node --nologo -v q
+    -p:NodeUnlocked=true "-p:NodeTrust=http://$(gateway):18000 $(tr -d '[:space:]' < "$BENCH_KEYS/node-config-public-key.txt")" -o out/node --nologo -v q
   dotnet publish OVSRendezvous/OVSRendezvous.csproj -c Release -o out/rendezvous --nologo -v q
   docker build -q -t "$IMAGE" -f OVSRollbackNode/Dockerfile . >/dev/null
 }

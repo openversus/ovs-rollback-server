@@ -19,10 +19,10 @@
 # Needs the .NET 10 SDK; the image also needs Docker. The node is self-contained ReadyToRun, one file per platform, so
 # players install no runtime; the rendezvous is the same for the server it runs on.
 #
-# The node is locked (NodeLockdown): it trusts only configs signed with the private half of the public key in
-# pki/$NODE_PKI/node-config-public-key.txt (NODE_PKI defaults to prod; OVSRollbackNode/tools/new-signing-key.sh makes a
-# pair, and only the public half is committed). NODE_CONFIG_PUBLIC_KEY=<base64> overrides the file, NODE_SERVER=<url>
-# the server the node trusts (default prod: set it too for any other key, e.g. NODE_PKI=testing).
+# The node is locked (NodeLockdown): it talks only to the servers of the environments in NODE_PKI (default "prod
+# testing", the first being the default), each read from pki/<env>/: server-url.txt and node-config-public-key.txt (the
+# public half of the pair OVSRollbackNode/tools/new-signing-key.sh makes). The mod's ServerUrl picks among them, and the
+# node takes configs only with that server's signature.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -72,24 +72,19 @@ do_test() {
 # Linux is a first-class target (Steam Deck and desktop Linux players: the mod starts the ELF from inside Proton).
 do_node() {
     local rids=${*:-"win-x64 linux-x64"}
-    local key=${NODE_CONFIG_PUBLIC_KEY:-}
-    if [ -z "$key" ]; then
-        local file="pki/${NODE_PKI:-prod}/node-config-public-key.txt"
-        [ -f "$file" ] \
-            || fail "$file is missing: the node needs the server's public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a pair; the private half goes to the servers as P2P_NODE_SIGNING_KEY_FILE)"
-        key=$(tr -d '[:space:]' < "$file")
-    fi
-    # Another environment's key beside prod's URL would make a node that refuses everything prod sends.
-    if [ "${NODE_PKI:-prod}" != prod ] && [ -z "${NODE_SERVER:-}" ]; then
-        fail "NODE_PKI=$NODE_PKI needs NODE_SERVER=<that environment's server URL>; the default is prod's"
-    fi
-    local server=()
-    [ -n "${NODE_SERVER:-}" ] && server=("-p:NodeServer=$NODE_SERVER")
+    local trust="" env file
+    for env in ${NODE_PKI:-prod testing}; do
+        for file in pki/$env/server-url.txt pki/$env/node-config-public-key.txt; do
+            [ -s "$file" ] || fail "$file is missing or empty: each environment the node trusts needs its server URL and public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a key pair; the private half goes to that server as P2P_NODE_SIGNING_KEY_FILE)"
+        done
+        trust+="$(tr -d '[:space:]' < "pki/$env/server-url.txt") $(tr -d '[:space:]' < "pki/$env/node-config-public-key.txt") "
+    done
+    say "the node trusts: $(for env in ${NODE_PKI:-prod testing}; do printf '%s (%s) ' "$env" "$(tr -d '[:space:]' < "pki/$env/server-url.txt")"; done)"
     for rid in $rids; do
         say "publishing the node for $rid"
         dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r "$rid" --self-contained true \
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true \
-            "-p:NodeConfigPublicKey=$key" "${server[@]}" -o "out/node-$rid" --nologo -v q
+            "-p:NodeTrust=$trust" -o "out/node-$rid" --nologo -v q
         local exe
         exe=$(ls "out/node-$rid" | grep -E '^OVS\.Rollback\.Node(\.exe)?$') || fail "out/node-$rid has no node executable"
         say "node $rid: out/node-$rid/$exe ($(du -sh "out/node-$rid" | cut -f1))"

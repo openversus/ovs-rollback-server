@@ -17,6 +17,17 @@ namespace OVS.Rollback.Node
         {
             Environment.CurrentDirectory = AppContext.BaseDirectory;
             ExportOptions(args);
+            try
+            {
+                // The server asked for: --server (just exported) or the environment's. A locked node takes the trusted server
+                // it names, else its default; an unlocked one takes that server's key, else the first.
+                NodeBuild.Select(Environment.GetEnvironmentVariable("Server__BaseUrl") ?? Environment.GetEnvironmentVariable("OVS_SERVER"));
+            }
+            catch (TypeInitializationException e) when (e.InnerException is FormatException bad)
+            {
+                Console.Error.WriteLine($"This node build's trust list is broken: {bad.Message}");
+                return 2;
+            }
             if (!NodeBuild.Unlocked)
             {
                 PinServer();
@@ -53,9 +64,9 @@ namespace OVS.Rollback.Node
         }
 
         /// <summary>
-        /// A locked node talks to the server it was built for, whatever --server or the environment say: the match
-        /// configs it hosts and its settings update come from there. Set here for the same reason as the options: the
-        /// engine reads its server once, at first touch.
+        /// A locked node talks only to a server it trusts (NodeBuild.Server, chosen from --server among the built-in ones):
+        /// the match configs it hosts and its settings update come from there. Set here for the same reason as the options:
+        /// the engine reads its server once, at first touch.
         /// </summary>
         private static void PinServer()
         {
