@@ -57,6 +57,40 @@ namespace OVS.Rollback.Models
         public int NumBots { get; set; }
         public HashSet<int> BotIndices { get; set; } = new();
 
+        // ── Spectators: the config's spectator entries, in config order. Every game
+        //    client connects as 8888 whatever its slot (and a config may number them
+        //    all 8888), so an entry is claimed by the first endpoint to take it, not
+        //    looked up by index (ClaimSpectatorEntry).
+        public OvsPlayer[] SpectatorEntries
+        {
+            get => _spectatorEntries;
+            set { lock (_spectatorClaimsLock) { _spectatorEntries = value; _spectatorClaims = new string?[value.Length]; } }
+        }
+        private OvsPlayer[] _spectatorEntries = [];
+        private string?[] _spectatorClaims = [];
+        private readonly object _spectatorClaimsLock = new();
+
+        /// <summary>
+        /// The config entry of the spectator at <paramref name="endPointKey"/>: the one it claimed before (a reconnect from the
+        /// same address keeps it), else the first entry no other endpoint holds. Null when every entry is taken. A client whose
+        /// address changes claims another entry; its old one stays taken.
+        /// </summary>
+        public OvsPlayer? ClaimSpectatorEntry(string endPointKey)
+        {
+            lock (_spectatorClaimsLock)
+            {
+                int free = -1;
+                for (int i = 0; i < _spectatorClaims.Length; i++)
+                {
+                    if (_spectatorClaims[i] == endPointKey) return _spectatorEntries[i];
+                    if (free < 0 && _spectatorClaims[i] is null) free = i;
+                }
+                if (free < 0) return null;
+                _spectatorClaims[free] = endPointKey;
+                return _spectatorEntries[free];
+            }
+        }
+
         // ── Per-player-slot input history: frame → input value ──
         public List<ConcurrentDictionary<uint, uint>> Inputs { get; set; } = [];
 

@@ -57,7 +57,7 @@ namespace OVS.Rollback.Models
                     // PlayerIndex >= 8888 sentinel convention — matchmakers
                     // have used either. Missing a spectator here inflates
                     // TeamSlotCount and corrupts the wire-protocol slot count.
-                    if (player.IsSpectator || player.PlayerIndex >= 8888)
+                    if (IsSpectatorEntry(player))
                     {
                         count++;
                     }
@@ -66,6 +66,34 @@ namespace OVS.Rollback.Models
             }
         }
         public int ActualPlayers => Players.Count - NumSpectators;
+
+        /// <summary>The first spectator index: every game client connects as a spectator with it, whatever its slot.</summary>
+        public const ushort FirstSpectatorIndex = 8888;
+
+        /// <summary>A spectator's entry: the explicit flag or the PlayerIndex >= 8888 sentinel (see <see cref="NumSpectators"/>).</summary>
+        public static bool IsSpectatorEntry(OvsPlayer player) => player.IsSpectator || player.PlayerIndex >= FirstSpectatorIndex;
+
+        /// <summary>
+        /// The index of every human of the match among the P2P nodes: a player's own, and for the n spectator entries
+        /// 8888 .. 8888+n-1, the series the rendezvous gives out in registration order. The same whether the config
+        /// numbers its spectators 8888 + i or all 8888, since no game client sends anything but 8888 anyway.
+        /// </summary>
+        public HashSet<ushort> NodeIndexes()
+        {
+            var indexes = new HashSet<ushort>();
+            int spectators = 0;
+            foreach (var player in Players)
+            {
+                if (player.IsBot) continue;
+                if (IsSpectatorEntry(player)) spectators++;
+                else indexes.Add(player.PlayerIndex);
+            }
+            for (int i = 0; i < spectators; i++)
+            {
+                indexes.Add((ushort)(FirstSpectatorIndex + i));
+            }
+            return indexes;
+        }
 
         public int NumBots
         {

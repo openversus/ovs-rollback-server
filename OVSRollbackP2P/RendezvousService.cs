@@ -59,8 +59,10 @@ namespace OVS.Rollback.P2P
                 else
                 {
                     reply = registry.Register(register, from, now, relay);
-                    logger.LogInformation("Match {Match}: player {Index}{Host} at {From} (LAN: {Lan}); {Peers} peer(s) known, host {HostIndex}",
-                        register.MatchId, register.PlayerIndex, register.IsHost ? " (host)" : "", from,
+                    ushort index = reply.YourIndex ?? register.PlayerIndex;
+                    logger.LogInformation("Match {Match}: player {Index}{Sent}{Host} at {From} (LAN: {Lan}); {Peers} peer(s) known, host {HostIndex}",
+                        register.MatchId, index, index != register.PlayerIndex ? $" (registered as {register.PlayerIndex})" : "",
+                        register.IsHost ? " (host)" : "", from,
                         string.Join(", ", register.LocalCandidates), reply.Peers.Count,
                         reply.HostIndex == PeersMessage.NoHost ? "unknown" : reply.HostIndex.ToString());
                 }

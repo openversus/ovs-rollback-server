@@ -142,4 +142,22 @@ public class PeerPathTests
         Assert.Null(p.Live);
         Assert.Single(Sent(p, t + TimeSpan.FromSeconds(50)));   // probing resumed at once, to the same candidate
     }
+
+    [Fact]
+    public void A_spectator_given_its_index_by_the_rendezvous_probes_and_answers_as_that_index()
+    {
+        // The game connected as 8888; the rendezvous made this node 8889 (the node sets it before adding the candidates).
+        var t = TimeSpan.Zero;
+        var p = new PeerPath(myIndex: 8888, peerIndex: 0, Hash, Options, t) { MyIndex = 8889 };
+        p.AddCandidates([Public]);
+        var probe = P2PProtocol.DecodeProbe(Assert.Single(Sent(p, t)).Datagram)!;
+        Assert.Equal(((ushort)8889, (ushort)0), (probe.FromIndex, probe.ToIndex));
+
+        Assert.Null(p.OnProbe(new ProbeMessage(Hash, 0, 8888, 1), Public, t));      // the host probing the game's index: not this node
+        var ack = P2PProtocol.DecodeProbe(p.OnProbe(new ProbeMessage(Hash, 0, 8889, 1), Public, t)!)!;
+        Assert.Equal(((ushort)8889, (ushort)0), (ack.FromIndex, ack.ToIndex));
+        Assert.True(p.OnAck(new ProbeMessage(Hash, 0, 8889, 1), Public, t));
+        var keepAlive = P2PProtocol.DecodeKeepAlive(Assert.Single(Sent(p, t + Options.KeepAliveInterval)).Datagram)!;
+        Assert.Equal((ushort)8889, keepAlive.FromIndex);
+    }
 }

@@ -43,7 +43,10 @@ namespace OVS.Rollback.Node
         {
             public readonly string MatchId = matchId;
             public readonly string Key = key;
-            public readonly ushort MyIndex = myIndex;
+            /// <summary>The index the game connected with; the engine (the host's, or the relay) sees only this one.</summary>
+            public readonly ushort GameIndex = myIndex;
+            /// <summary>This node's index among the nodes: the game's, until the rendezvous gives a spectator its own (OnPeers).</summary>
+            public ushort MyIndex = myIndex;
             public readonly ulong Hash = P2PProtocol.HashMatch(matchId, key);
             public readonly TimeSpan Started = now;
             public Phase Phase = Phase.Resolving;
@@ -559,8 +562,9 @@ namespace OVS.Rollback.Node
             }
             s.HostIndex = host.PlayerIndex;
             s.Role = host.PlayerIndex == s.MyIndex ? Role.Host : Role.Forwarder;
+            // The spectators by ordinal (8888, 8889, ...), as the rendezvous gives them out, whatever indexes the config has.
             s.Expected = s.Role == Role.Host
-                ? humans.Where(p => p.PlayerIndex != s.MyIndex).Select(p => p.PlayerIndex).ToHashSet()
+                ? config.NodeIndexes().Where(i => i != s.MyIndex).ToHashSet()
                 : [s.HostIndex];
             _log.LogInformation("Match {Match}: {Players} human player(s), host is player {Host}; this node is the {Role}",
                 s.MatchId, humans.Count, s.HostIndex, s.Role == Role.Host ? "host" : "forwarder");
@@ -606,6 +610,17 @@ namespace OVS.Rollback.Node
                 _log.LogError("Match {Match}: the rendezvous rejected this node's registration (wrong key?)", s.MatchId);
                 if (s.Role == Role.Forwarder && s.Target is null) FallBack(s, "rendezvous rejected the registration");
                 return;
+            }
+            if (peers.YourIndex is { } yours && yours != s.MyIndex
+                && s.GameIndex >= P2PProtocol.FirstSpectatorIndex && yours >= P2PProtocol.FirstSpectatorIndex)
+            {
+                // A spectator's index among the nodes is the rendezvous's (every game spectates as 8888): it goes into the
+                // registrations, probes and keepalives from now on. The game keeps its own; its datagrams pass untouched.
+                // Only a spectator's: a player's index is the game's and the config's. An older rendezvous sends none.
+                _log.LogInformation("Match {Match}: the rendezvous knows this node as spectator {Index} (the game connected as {Game})",
+                    s.MatchId, yours, s.GameIndex);
+                s.MyIndex = yours;
+                foreach (var path in s.Peers.Values) path.MyIndex = yours;
             }
             if (s.PublicEndPoint is null || !s.PublicEndPoint.Equals(peers.YourPublicEndPoint))
             {

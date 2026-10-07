@@ -80,4 +80,70 @@ public class RendezvousRegistryTests
         Assert.Equal((ushort)1, Assert.Single(reply.Peers).PlayerIndex);
         Assert.Equal(0, r.Expire(TimeSpan.FromMinutes(30)));
     }
+
+    private static readonly IPEndPoint S1 = Ep("198.51.100.1", 41234), S2 = Ep("198.51.100.2", 41234), S3 = Ep("198.51.100.3", 41234);
+
+    private static RegisterMessage Spectator(ushort index = 8888) => new("m1", "key", index, false, []);
+
+    [Fact]
+    public void Two_spectators_both_sending_8888_get_8888_and_8889_and_each_sees_the_other()
+    {
+        var r = new RendezvousRegistry(TimeSpan.FromMinutes(10));
+        var t = TimeSpan.Zero;
+        r.Register(new RegisterMessage("m1", "key", 0, true, []), A, t);
+
+        var first = r.Register(Spectator(), S1, t);
+        Assert.Equal((ushort)8888, first.YourIndex);
+
+        var second = r.Register(Spectator(), S2, t);
+        Assert.Equal((ushort)8889, second.YourIndex);
+        // Everyone but itself, by the index it was given: the first spectator is in, the second is not.
+        Assert.Equal([(0, A), (8888, S1)], second.Peers.Select(p => ((int)p.PlayerIndex, p.PublicEndPoint)).OrderBy(p => p.Item1));
+
+        var host = r.Register(new RegisterMessage("m1", "key", 0, true, []), A, t);
+        Assert.Equal([(8888, S1), (8889, S2)], host.Peers.Select(p => ((int)p.PlayerIndex, p.PublicEndPoint)).OrderBy(p => p.Item1));
+    }
+
+    [Fact]
+    public void A_spectator_re_registering_from_the_same_address_keeps_its_index()
+    {
+        var r = new RendezvousRegistry(TimeSpan.FromMinutes(10));
+        var t = TimeSpan.Zero;
+        Assert.Equal((ushort)8888, r.Register(Spectator(), S1, t).YourIndex);
+        Assert.Equal((ushort)8889, r.Register(Spectator(), S2, t).YourIndex);
+
+        // Again with the game's 8888, and with the index it was given (what a node sends once it knows it).
+        Assert.Equal((ushort)8889, r.Register(Spectator(), S2, t + TimeSpan.FromSeconds(1)).YourIndex);
+        Assert.Equal((ushort)8889, r.Register(Spectator(8889), S2, t + TimeSpan.FromSeconds(2)).YourIndex);
+        Assert.Equal((ushort)8888, r.Register(Spectator(8889), S1, t + TimeSpan.FromSeconds(3)).YourIndex);
+        var host = r.Register(new RegisterMessage("m1", "key", 0, true, []), A, t + TimeSpan.FromSeconds(4));
+        Assert.Equal(2, host.Peers.Count);
+    }
+
+    [Fact]
+    public void An_expired_spectator_frees_its_index_for_the_next()
+    {
+        var r = new RendezvousRegistry(TimeSpan.FromMinutes(10));
+        Assert.Equal((ushort)8888, r.Register(Spectator(), S1, TimeSpan.Zero).YourIndex);
+        Assert.Equal((ushort)8889, r.Register(Spectator(), S2, TimeSpan.FromMinutes(5)).YourIndex);
+        r.Expire(TimeSpan.FromMinutes(11));                                   // S1 is gone, S2 stays
+
+        Assert.Equal((ushort)8888, r.Register(Spectator(), S3, TimeSpan.FromMinutes(11)).YourIndex);
+        Assert.Equal((ushort)8889, r.Register(Spectator(), S2, TimeSpan.FromMinutes(12)).YourIndex);
+    }
+
+    [Fact]
+    public void Players_keep_their_own_index_and_are_told_it()
+    {
+        var r = new RendezvousRegistry(TimeSpan.FromMinutes(10));
+        Assert.Equal((ushort)8888, r.Register(Spectator(), S1, TimeSpan.Zero).YourIndex);
+        Assert.Equal((ushort)2, r.Register(new RegisterMessage("m1", "key", 2, true, []), A, TimeSpan.Zero).YourIndex);
+        Assert.Equal((ushort)1, r.Register(new RegisterMessage("m1", "key", 1, false, []), B, TimeSpan.Zero).YourIndex);
+
+        // A player that comes back from another address is still the same index (and replaces its old entry).
+        var moved = r.Register(new RegisterMessage("m1", "key", 1, false, []), S2, TimeSpan.Zero);
+        Assert.Equal((ushort)1, moved.YourIndex);
+        var host = r.Register(new RegisterMessage("m1", "key", 2, true, []), A, TimeSpan.Zero);
+        Assert.Equal([(1, S2), (8888, S1)], host.Peers.Select(p => ((int)p.PlayerIndex, p.PublicEndPoint)).OrderBy(p => p.Item1));
+    }
 }

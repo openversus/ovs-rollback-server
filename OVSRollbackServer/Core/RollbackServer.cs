@@ -545,7 +545,8 @@ namespace OVS.Rollback.Core
                         NumBots = config.NumBots,
                         BotIndices = new HashSet<int>(
                             config.Players.Where(p => p.IsBot).Select(p => (int)p.PlayerIndex)
-                        )
+                        ),
+                        SpectatorEntries = config.Players.Where(OVSMatchConfig.IsSpectatorEntry).ToArray()
                     };
 
                     if (Statics.FinalLogFile.StringIsNullOrWhiteSpace)
@@ -616,18 +617,11 @@ namespace OVS.Rollback.Core
             string playerCharacter = "Unknown";
             ushort payloadIndex = payload.PlayerData.PlayerIndex;
 
-            if (null != matchConfig && matchConfig != default)
+            if (ConfigEntryFor(match, matchConfig, payloadIndex, key) is { } entry)
             {
-                foreach (OvsPlayer? player in matchConfig.Players)
-                {
-                    if (player?.PlayerIndex == payloadIndex)
-                    {
-                        playerID = player?.PlayerId ?? "Unknown";
-                        playerName = player?.PlayerName ?? "Unknown";
-                        playerCharacter = player?.PlayerCharacter ?? "Unknown";
-                        break;
-                    }
-                }
+                playerID = entry.PlayerId ?? "Unknown";
+                playerName = entry.PlayerName ?? "Unknown";
+                playerCharacter = entry.PlayerCharacter ?? "Unknown";
             }
 
             if (playerID == "Unknown" || playerName == "Unknown" || playerCharacter == "Unknown")
@@ -724,6 +718,32 @@ namespace OVS.Rollback.Core
             }
 
             return newPlayer;
+        }
+
+        /// <summary>
+        /// The config entry of the client connecting from <paramref name="endPointKey"/> with <paramref name="index"/>. A player
+        /// is found by its index. A spectator (8888 or above) claims the first spectator entry no other endpoint holds, and keeps
+        /// it when it connects again from the same address: every game client spectates as 8888 whatever its slot, so the
+        /// index names no one, and a lookup by it gave every spectator the first one's entry. Null when nothing matches.
+        /// </summary>
+        internal static OvsPlayer? ConfigEntryFor(MatchState match, OVSMatchConfig? config, ushort index, string endPointKey)
+        {
+            if (index >= OVSMatchConfig.FirstSpectatorIndex)
+            {
+                return match.ClaimSpectatorEntry(endPointKey);
+            }
+            if (config is null)
+            {
+                return null;
+            }
+            foreach (OvsPlayer? player in config.Players)
+            {
+                if (player?.PlayerIndex == index)
+                {
+                    return player;
+                }
+            }
+            return null;
         }
 
         // ═══════════════════════════════════════════

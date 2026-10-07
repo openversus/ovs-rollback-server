@@ -44,7 +44,13 @@ namespace OVS.Rollback.P2P
         public TimeSpan Ttl { get; } = ttl;
         public int MatchCount { get { lock (_lock) return _matches.Count; } }
 
-        /// <summary>Records the registration and answers it. <paramref name="from"/> is the address the datagram came from: the node's public mapping.</summary>
+        /// <summary>
+        /// Records the registration and answers it. <paramref name="from"/> is the address the datagram came from: the node's public mapping.
+        /// A player is known by its own index. A spectator (<see cref="P2PProtocol.FirstSpectatorIndex"/> or above) is given one
+        /// here, since every game client spectates as 8888 whatever its slot: the lowest spectator index free in the match, kept
+        /// for that public mapping (a re-registration from it keeps the index; the index frees when the registration expires).
+        /// The answer's <see cref="PeersMessage.YourIndex"/> tells the node which one it has.
+        /// </summary>
         public PeersMessage Register(RegisterMessage m, IPEndPoint from, TimeSpan now, IPEndPoint? relay = null)
         {
             lock (_lock)
@@ -59,18 +65,36 @@ namespace OVS.Rollback.P2P
                     return new PeersMessage(false, from, PeersMessage.NoHost, relay, []);
                 }
 
-                var info = new PeerInfo(m.PlayerIndex, m.IsHost, from, m.LocalCandidates);
-                match.Nodes[m.PlayerIndex] = new Registration(info, now);
+                ushort yours = m.PlayerIndex >= P2PProtocol.FirstSpectatorIndex ? SpectatorIndex(match, from) : m.PlayerIndex;
+                var info = new PeerInfo(yours, m.IsHost, from, m.LocalCandidates);
+                match.Nodes[yours] = new Registration(info, now);
 
                 ushort host = PeersMessage.NoHost;
                 var peers = new List<PeerInfo>();
                 foreach (var (index, reg) in match.Nodes)
                 {
                     if (reg.Info.IsHost) host = index;
-                    if (index != m.PlayerIndex) peers.Add(reg.Info);
+                    if (index != yours) peers.Add(reg.Info);
                 }
-                return new PeersMessage(true, from, host, relay, peers);
+                return new PeersMessage(true, from, host, relay, peers, yours);
             }
+        }
+
+        /// <summary>
+        /// The spectator index of the node at <paramref name="from"/>: the one it registered with before, else the lowest free one.
+        /// Keyed by the public mapping, the only thing that tells two spectators apart. A NAT that rebinds the mapping mid-match
+        /// gets a new index, and the old one stays taken until it expires: an accepted limit, as a node stops registering once
+        /// it knows every peer it expects, and its paths are open by then.
+        /// </summary>
+        private static ushort SpectatorIndex(Match match, IPEndPoint from)
+        {
+            foreach (var (index, reg) in match.Nodes)
+            {
+                if (index >= P2PProtocol.FirstSpectatorIndex && reg.Info.PublicEndPoint.Equals(from)) return index;
+            }
+            ushort free = P2PProtocol.FirstSpectatorIndex;
+            while (match.Nodes.ContainsKey(free)) free++;
+            return free;
         }
 
         /// <summary>Drops nodes silent for longer than the TTL, and matches left empty. Returns how many matches remain.</summary>

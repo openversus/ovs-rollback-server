@@ -131,6 +131,45 @@ public class ProtocolTests
         for (int n = 0; n < probe.Length; n++) Assert.Null(P2PProtocol.DecodeProbe(probe.AsSpan(0, n)));
     }
 
+    private static PeersMessage SomePeers(ushort? yourIndex) => new(true, Ep("203.0.113.9", 60001), 0, Ep("198.51.100.4", 57000),
+        [new PeerInfo(0, true, Ep("203.0.113.10", 41234), [Ep("10.1.1.1", 41234)]), new PeerInfo(8888, false, Ep("203.0.113.11", 5), [])],
+        yourIndex);
+
+    [Fact]
+    public void Your_index_is_appended_to_the_old_peers_layout()
+    {
+        // An older node's decoder reads the peers and stops; it never looks for the end. So the new reply must be the old
+        // one, byte for byte, plus the index: then an older node reads it exactly as before.
+        var old = P2PProtocol.Encode(SomePeers(null));
+        var current = P2PProtocol.Encode(SomePeers(8889));
+        Assert.Equal(old.Length + 2, current.Length);
+        Assert.Equal(old, current[..old.Length]);
+        Assert.Equal(new byte[] { 0xb9, 0x22 }, current[old.Length..]);   // 8889, little-endian
+
+        var back = P2PProtocol.DecodePeers(current)!;
+        Assert.Equal((ushort)8889, back.YourIndex);
+        Assert.Equal(2, back.Peers.Count);
+    }
+
+    [Fact]
+    public void A_reply_without_your_index_decodes_with_none()
+    {
+        // An older rendezvous: the node keeps the index its game connected with.
+        var back = P2PProtocol.DecodePeers(P2PProtocol.Encode(SomePeers(null)))!;
+        Assert.Null(back.YourIndex);
+        Assert.Equal(2, back.Peers.Count);
+        Assert.Null(P2PProtocol.DecodePeers(P2PProtocol.Encode(new PeersMessage(false, Ep("1.2.3.4", 1), PeersMessage.NoHost, null, [])))!.YourIndex);
+    }
+
+    [Fact]
+    public void Your_index_cut_short_is_rejected_and_bytes_after_it_are_ignored()
+    {
+        var current = P2PProtocol.Encode(SomePeers(8889));
+        Assert.Null(P2PProtocol.DecodePeers(current.AsSpan(0, current.Length - 1)));
+        Assert.Null(P2PProtocol.DecodePeers(current.AsSpan(0, current.Length - 2))!.YourIndex);
+        Assert.Equal((ushort)8889, P2PProtocol.DecodePeers([.. current, 7, 7, 7])!.YourIndex);
+    }
+
     [Fact]
     public void Kinds_do_not_decode_as_each_other()
     {

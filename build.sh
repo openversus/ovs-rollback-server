@@ -7,9 +7,9 @@
 #   ./build.sh TAG [CONTEXT]          the same, with the image tagged ovs-rollback-server-csharp:TAG and built from
 #                                     CONTEXT (this script's original form; TAG defaults to ready-to-run, CONTEXT to .)
 #   ./build.sh test                   the unit tests only
-#   ./build.sh node [RID ...]         the node only (default: win-x64 linux-x64)      -> out/node-<RID>/
+#   ./build.sh node [--bench] [RID ...]  the node only (default: win-x64 linux-x64)   -> out/node-<RID>/
 #   ./build.sh rendezvous             the rendezvous only                             -> out/rendezvous-linux-x64/, .tar.gz
-#   ./build.sh publish [RID ...]      node and rendezvous, no tests, no image
+#   ./build.sh publish [--bench] [RID ...]  node and rendezvous, no tests, no image
 #   ./build.sh image [TAG] [CONTEXT]  the Docker image only
 #
 # Every build in a run is stamped with the same version (git commit date, branch, short hash) and compile time, as the
@@ -23,6 +23,11 @@
 # testing", the first being the default), each read from pki/<env>/: server-url.txt and node-config-public-key.txt (the
 # public half of the pair OVSRollbackNode/tools/new-signing-key.sh makes). The mod's ServerUrl picks among them, and the
 # node takes configs only with that server's signature.
+#
+# --bench builds the same node trusting one more server, a local bench, after the others (so prod stays the default):
+# its public key from local/pki/bench/node-config-public-key.txt (OVSRollbackNode/bench/p2p-bench.sh makes the pair), its
+# URL from local/pki/bench/server-url.txt, else BENCH_SERVER_URL, else http://127.0.0.1:18000. It goes to
+# out/node-<RID>-bench/, never out/node-<RID>/: a bench build is for a developer's own game, not for players.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -71,23 +76,44 @@ do_test() {
 # The P2P node players run beside the game: self-contained, single file, ReadyToRun, no runtime to install.
 # Linux is a first-class target (Steam Deck and desktop Linux players: the mod starts the ELF from inside Proton).
 do_node() {
-    local rids=${*:-"win-x64 linux-x64"}
-    local trust="" env file
+    local bench=0 rids="" arg
+    for arg in "$@"; do
+        case "$arg" in
+            --bench) bench=1 ;;
+            -*) fail "unknown node option $arg (the only one is --bench)" ;;
+            *) rids+="$arg " ;;
+        esac
+    done
+    rids=${rids:-"win-x64 linux-x64"}
+    local trust="" trusted="" env file
     for env in ${NODE_PKI:-prod testing}; do
         for file in pki/$env/server-url.txt pki/$env/node-config-public-key.txt; do
             [ -s "$file" ] || fail "$file is missing or empty: each environment the node trusts needs its server URL and public key (OVSRollbackNode/tools/new-signing-key.sh DIR makes a key pair; the private half goes to that server as P2P_NODE_SIGNING_KEY_FILE)"
         done
         trust+="$(tr -d '[:space:]' < "pki/$env/server-url.txt") $(tr -d '[:space:]' < "pki/$env/node-config-public-key.txt") "
+        trusted+="$env ($(tr -d '[:space:]' < "pki/$env/server-url.txt")) "
     done
-    say "the node trusts: $(for env in ${NODE_PKI:-prod testing}; do printf '%s (%s) ' "$env" "$(tr -d '[:space:]' < "pki/$env/server-url.txt")"; done)"
+    local suffix=""
+    if [ "$bench" = 1 ]; then
+        local key=local/pki/bench/node-config-public-key.txt url
+        [ -s "$key" ] || fail "$key is missing or empty: OVSRollbackNode/bench/p2p-bench.sh up makes the bench's key pair (the bench servers sign with its private half)"
+        url=""
+        [ -s local/pki/bench/server-url.txt ] && url=$(tr -d '[:space:]' < local/pki/bench/server-url.txt)
+        url=${url:-${BENCH_SERVER_URL:-http://127.0.0.1:18000}}
+        trust+="$url $(tr -d '[:space:]' < "$key") "
+        trusted+="bench ($url) "
+        suffix=-bench
+    fi
+    say "the node trusts: $trusted"
     for rid in $rids; do
-        say "publishing the node for $rid"
+        local dir="out/node-$rid$suffix"
+        say "publishing the node for $rid${suffix:+ (bench build)}"
         dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r "$rid" --self-contained true \
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true \
-            "-p:NodeTrust=$trust" -o "out/node-$rid" --nologo -v q
+            "-p:NodeTrust=$trust" -o "$dir" --nologo -v q
         local exe
-        exe=$(ls "out/node-$rid" | grep -E '^OVS\.Rollback\.Node(\.exe)?$') || fail "out/node-$rid has no node executable"
-        say "node $rid: out/node-$rid/$exe ($(du -sh "out/node-$rid" | cut -f1))"
+        exe=$(ls "$dir" | grep -E '^OVS\.Rollback\.Node(\.exe)?$') || fail "$dir has no node executable"
+        say "node $rid: $dir/$exe ($(du -sh "$dir" | cut -f1))"
     done
 }
 

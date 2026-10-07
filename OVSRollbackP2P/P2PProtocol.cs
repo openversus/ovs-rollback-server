@@ -39,8 +39,12 @@ namespace OVS.Rollback.P2P
     /// <summary>What the rendezvous knows about one node of a match.</summary>
     public sealed record PeerInfo(ushort PlayerIndex, bool IsHost, IPEndPoint PublicEndPoint, IReadOnlyList<IPEndPoint> LocalCandidates);
 
-    /// <summary>The rendezvous's answer to a registration: the registrant's own public mapping and every other node it knows.</summary>
-    public sealed record PeersMessage(bool Accepted, IPEndPoint YourPublicEndPoint, ushort HostIndex, IPEndPoint? Relay, IReadOnlyList<PeerInfo> Peers)
+    /// <summary>
+    /// The rendezvous's answer to a registration: the registrant's own public mapping and every other node it knows.
+    /// <paramref name="YourIndex"/> is the index the rendezvous knows the registrant by: its own for a player, the one it
+    /// was given for a spectator (see <see cref="RendezvousRegistry.Register"/>). Null from a rendezvous older than it.
+    /// </summary>
+    public sealed record PeersMessage(bool Accepted, IPEndPoint YourPublicEndPoint, ushort HostIndex, IPEndPoint? Relay, IReadOnlyList<PeerInfo> Peers, ushort? YourIndex = null)
     {
         public const ushort NoHost = ushort.MaxValue;
     }
@@ -68,6 +72,12 @@ namespace OVS.Rollback.P2P
         public const int MaxDatagram = 1024;
         private const int MaxCandidates = 16;
         private const int MaxPeers = 16;
+
+        /// <summary>
+        /// The first spectator index. Every game client connects as a spectator with this one, whatever its slot, so
+        /// among the nodes spectators are told apart by the rendezvous: 8888, 8889, ... (as the engine's sentinel).
+        /// </summary>
+        public const ushort FirstSpectatorIndex = 8888;
 
         /// <summary>True when the datagram is one of ours (so not the game's).</summary>
         public static bool IsP2P(ReadOnlySpan<byte> datagram) =>
@@ -119,6 +129,8 @@ namespace OVS.Rollback.P2P
                 w.EndPoint(p.PublicEndPoint);
                 w.EndPoints(p.LocalCandidates);
             }
+            // Appended after the peers, so a node older than it reads the same message and ignores the two bytes.
+            if (m.YourIndex is { } yours) w.U16(yours);
             return w.ToArray();
         }
 
@@ -177,7 +189,14 @@ namespace OVS.Rollback.P2P
                 if (!r.U16(out var index) || !r.U8(out var flags) || !r.EndPoint(out var pub) || !r.EndPoints(out var locals)) return null;
                 peers.Add(new PeerInfo(index, (flags & 1) != 0, pub, locals));
             }
-            return new PeersMessage(status == 0, mine, host, relay.Port == 0 ? null : relay, peers);
+            // The registrant's own index, when the rendezvous sent it (an older one does not); anything after it is ignored.
+            ushort? yours = null;
+            if (!r.AtEnd)
+            {
+                if (!r.U16(out var assigned)) return null;
+                yours = assigned;
+            }
+            return new PeersMessage(status == 0, mine, host, relay.Port == 0 ? null : relay, peers, yours);
         }
 
         public static ProbeMessage? DecodeProbe(ReadOnlySpan<byte> d)
@@ -266,6 +285,8 @@ namespace OVS.Rollback.P2P
             private int _o = 0;
 
             private bool Has(int n) => _d.Length - _o >= n;
+
+            public bool AtEnd => _o >= _d.Length;
 
             public bool U8(out byte v) { v = 0; if (!Has(1)) return false; v = _d[_o++]; return true; }
             public bool U16(out ushort v) { v = 0; if (!Has(2)) return false; v = BinaryPrimitives.ReadUInt16LittleEndian(_d[_o..]); _o += 2; return true; }

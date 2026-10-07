@@ -33,7 +33,12 @@ namespace OVS.Rollback.P2P
         private TimeSpan? _started;
         private uint _sequence;
 
-        public ushort MyIndex { get; }
+        /// <summary>
+        /// This node's index in the probes and keepalives. Settable: a spectator's node learns its index from the
+        /// rendezvous's answer (<see cref="PeersMessage.YourIndex"/>), which is also what brings the first candidate, so
+        /// nothing has been sent with the old one.
+        /// </summary>
+        public ushort MyIndex { get; set; }
         public ushort PeerIndex { get; }
         public ulong MatchHash { get; }
         public PeerPathState State { get; private set; } = PeerPathState.Probing;
