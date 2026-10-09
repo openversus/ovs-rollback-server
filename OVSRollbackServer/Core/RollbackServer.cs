@@ -516,7 +516,7 @@ namespace OVS.Rollback.Core
                         Key = matchData.Key,
                         DurationInFrames = config.MatchDuration,
                         //TickIntervalMs = 1000f / 60f,
-                        TickIntervalMs = TargetFrameTime,
+                        TickIntervalMs = config.FrameTimeMs(TargetFrameTime),
                         CurrentFrame = 0,
                         MaxPlayers = config.MaxPlayers,
                         PingPhaseCount = 0,
@@ -1290,7 +1290,7 @@ namespace OVS.Rollback.Core
                 if (!freq.TryGetValue(playerChecksum, out int groupCount)) continue;
                 if (groupCount != maxCount) continue;
 
-                double score = ConnectionStabilityScore(player);
+                double score = ConnectionStabilityScore(player, match.TickIntervalMs);
                 if (!found || score < bestScore)
                 {
                     bestScore = score;
@@ -1321,7 +1321,7 @@ namespace OVS.Rollback.Core
                 if (!frameMap.TryGetValue(player.PlayerIndex, out uint playerChecksum)) continue;
                 if (playerChecksum != targetChecksum) continue;
 
-                double score = ConnectionStabilityScore(player);
+                double score = ConnectionStabilityScore(player, match.TickIntervalMs);
                 if (best is null || score < bestScore)
                 {
                     bestScore = score;
@@ -1335,27 +1335,27 @@ namespace OVS.Rollback.Core
         /// <summary>
         /// Scalar connection/simulation stability score; lower = more trusted.
         /// Primary: Welford ping variance (ms²) + rift variance scaled to ms² via
-        /// TargetFrameTime², so both terms share a scale. Fallback (too few samples):
+        /// the match's frame time², so both terms share a scale. Fallback (too few samples):
         /// instantaneous ping/rift offset high enough that it never beats a player
         /// with real match-long variance data.
         /// </summary>
-        private double ConnectionStabilityScore(PlayerInfo player)
+        private static double ConnectionStabilityScore(PlayerInfo player, float frameTimeMs)
         {
             bool hasPingVariance = player.PingVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
             bool hasRiftVariance = player.RiftVarianceSampleCount >= PlayerInfo.VarianceMinSamples;
 
             if (hasPingVariance && hasRiftVariance)
             {
-                double riftVarianceMs2 = player.RiftVariance * TargetFrameTime * TargetFrameTime;
+                double riftVarianceMs2 = player.RiftVariance * frameTimeMs * frameTimeMs;
                 return player.PingVariance + riftVarianceMs2;
             }
 
             const double FallbackOffset = 1_000_000.0;
-            return FallbackOffset + player.SmoothedPing + MathF.Abs(player.SmoothRift) * TargetFrameTime;
+            return FallbackOffset + player.SmoothedPing + MathF.Abs(player.SmoothRift) * frameTimeMs;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame)
+        private void CalcRiftVariableTick(PlayerInfo player, uint serverFrame, float frameTimeMs)
         {
             var config = ServerConfiguration.Instance;
             IRiftAlgorithm algorithm = RiftAlgorithms.Get(config.RiftCalculation.Algorithm);
@@ -1370,7 +1370,7 @@ namespace OVS.Rollback.Core
                 return;
             }
 
-            float halfPingFrames = (player.SmoothedPing * 0.5f) / TargetFrameTime;
+            float halfPingFrames = (player.SmoothedPing * 0.5f) / frameTimeMs;
             float predictedClientFrame = player.LastClientFrame + halfPingFrames;
 
             // Raw rift: how far ahead client is RIGHT NOW
@@ -1741,7 +1741,7 @@ namespace OVS.Rollback.Core
                     {
                         player.PingOverride = hostReportedPing;
                     }
-                    CalcRiftVariableTick(player, serverFrame);
+                    CalcRiftVariableTick(player, serverFrame, match.TickIntervalMs);
 
                     if (!player.Disconnected &&
                         Stopwatch.GetElapsedTime(player.LastInputTimestamp).TotalSeconds
@@ -1998,7 +1998,7 @@ namespace OVS.Rollback.Core
                 uint handled = match.LastHandledChecksumFrame;
                 uint abandonAge = Math.Max(
                     desyncConfig.ChecksumRetentionFrames,
-                    (uint)(DisconnectTimeout * ServerConfiguration.Instance.Performance.TargetFrameRate));
+                    (uint)(DisconnectTimeout * 1000f / match.TickIntervalMs));
                 uint abandonBefore = match.CurrentFrame > abandonAge
                     ? match.CurrentFrame - abandonAge
                     : 0;
