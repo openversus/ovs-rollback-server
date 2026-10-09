@@ -39,6 +39,18 @@ namespace OVS.Rollback.Models
         [JsonPropertyName("match_duration")]
         public uint MatchDuration { get; set; } = 36000;
 
+        /// <summary>
+        /// Frames a second this match runs at, when it isn't the server's Performance.TargetFrameRate: a game speed
+        /// mutator (Beta Speed: 72, the game at 1.2x). Every frame is still 1/60 s of game time, so MatchDuration
+        /// stays in game frames. Absent, or outside 30..240: the server's rate.
+        /// </summary>
+        [JsonPropertyName("tick_rate")]
+        public int? TickRate { get; set; }
+
+        /// <summary>The frame interval for this match: <see cref="TickRate"/> when it is set and sane, else <paramref name="serverFrameTimeMs"/>.</summary>
+        public float FrameTimeMs(float serverFrameTimeMs) =>
+            TickRate is >= 30 and <= 240 ? 1000f / TickRate.Value : serverFrameTimeMs;
+
         [JsonPropertyName("players")]
         public List<OvsPlayer> Players { get; set; } = [];
 
