@@ -1919,7 +1919,7 @@ namespace OVS.Rollback.Core
                         while (f < simulationHorizon && predictedCount < MaxInputsPerFrame)
                         {
                             uint framesMissed = f - lastAck;
-                            uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed);
+                            uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed, gameConfig.PredictionGraceFrames);
 
                             // TryAdd, NOT inputMap[f] = predicted. The shared input
                             // map is per-PlayerIndex across all recipients; if real
