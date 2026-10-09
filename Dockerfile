@@ -21,6 +21,11 @@ FROM build AS publish
 
 ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./OVSRollbackServer.csproj" -c $BUILD_CONFIGURATION -r linux-x64 --self-contained true -o /app/publish
+# The rendezvous beside it: nodes of a P2P match find each other through it (UDP, 41235 by default). Same image, its
+# own container: entrypoint ["/app/rendezvous/OVS.Rollback.Rendezvous", "41235", "--relay", "<relay host:port>"].
+WORKDIR "/src/OVSRendezvous"
+RUN dotnet publish "./OVSRendezvous.csproj" -c $BUILD_CONFIGURATION -r linux-x64 --self-contained true -o /app/publish/rendezvous
+WORKDIR "/src/OVSRollbackServer"
 
 USER root
 RUN apt update -y \
