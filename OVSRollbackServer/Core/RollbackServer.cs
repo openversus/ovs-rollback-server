@@ -393,6 +393,15 @@ namespace OVS.Rollback.Core
                     player.LastSeqRecv = header.Sequence;
                 }
 
+                // An eliminated stock/FFA player can stop producing gameplay
+                // input while continuing to acknowledge the match. Any valid
+                // parsed packet is connection activity; LastInputTimestamp is
+                // kept exclusively for input/prediction diagnostics.
+                lock (player.Lock)
+                {
+                    player.LastPacketTimestamp = Stopwatch.GetTimestamp();
+                }
+
                 if (type == ClientMessageType.QualityData)
                 {
                     var qPayload = (QualityDataPayload)clientMsg.Value.Payload;
@@ -867,6 +876,7 @@ namespace OVS.Rollback.Core
 
             lock (player.Lock)
             {
+                player.LastAckTimestamp = Stopwatch.GetTimestamp();
                 for (int i = 0; i < payload.AckFrame.Count && i < player.AckedFrames.Count; i++)
                 {
                     uint acked = payload.AckFrame[i];
@@ -1041,6 +1051,7 @@ namespace OVS.Rollback.Core
                 player.LastClientFrame = payload.ClientFrame;
                 player.HasNewFrame = true;
                 player.LastInputTimestamp = Stopwatch.GetTimestamp();
+                player.InputSilenceLogged = false;
                 player.Disconnected = false;
             }
 
@@ -1743,9 +1754,27 @@ namespace OVS.Rollback.Core
                     }
                     CalcRiftVariableTick(player, serverFrame);
 
+                    double inputSilenceSeconds = Stopwatch.GetElapsedTime(
+                        player.LastInputTimestamp).TotalSeconds;
+                    double packetSilenceSeconds = Stopwatch.GetElapsedTime(
+                        player.LastPacketTimestamp).TotalSeconds;
+                    double ackSilenceSeconds = player.LastAckTimestamp == 0
+                        ? double.PositiveInfinity
+                        : Stopwatch.GetElapsedTime(player.LastAckTimestamp).TotalSeconds;
+
+                    // Expected after local elimination: the game stops sending
+                    // input but continues acknowledging rollback traffic.
+                    if (!player.InputSilenceLogged && inputSilenceSeconds >= 1.0 &&
+                        ackSilenceSeconds < 2.0)
+                    {
+                        player.InputSilenceLogged = true;
+                        _logger.LogInformation(
+                            "Player index {Index} for matchID {MatchId} is ACK-active but input-silent; keeping the connection and synthesizing neutral input",
+                            player.PlayerIndex, player.MatchId);
+                    }
+
                     if (!player.Disconnected &&
-                        Stopwatch.GetElapsedTime(player.LastInputTimestamp).TotalSeconds
-                            > DisconnectTimeout && !player.IsSpectator)
+                        packetSilenceSeconds > DisconnectTimeout && !player.IsSpectator)
                     {
                         player.Disconnected = true;
                         ServerMetrics.PlayersDisconnected.Add(1);
@@ -1753,7 +1782,7 @@ namespace OVS.Rollback.Core
                         _ = Events.SendPlayerDisconnectEvent(this, StatusEventArgs.CreateNew(
                                 description: "PlayerTimeout",
                                 matchEvent: "PlayerDisconnect",
-                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} timed out and was disconnected from match {player.MatchId} after {DisconnectTimeout} seconds without input.",
+                                matchDescription: $"Player {player.PlayerId} (name: {player.PlayerName}, character: {player.PlayerCharacter}) at PlayerIndex {player.PlayerIndex} timed out and was disconnected from match {player.MatchId} after {DisconnectTimeout} seconds without a valid packet.",
                                 matchKey: match.Key,
                                 matchId: match.MatchId,
                                 matchNumPlayers: match.Players.Count,
@@ -1791,6 +1820,26 @@ namespace OVS.Rollback.Core
             {
                 sequenceBase = match.SequenceCounter;
                 match.SequenceCounter += (uint)ws.PlayerCount;
+            }
+
+            // Advance every recipient toward one deterministic horizon. An
+            // eliminated player's LastClientFrame freezes when input stops, so
+            // using it as that player's horizon strands their view in the past.
+            // Bound peer claims to the configured lookahead for safety.
+            uint simulationHorizon = serverFrame;
+            uint maxTrustedHorizon = serverFrame +
+                ServerConfiguration.Instance.InputValidation.InputLookaheadFrames;
+            for (int p = 0; p < ws.PlayerCount; p++)
+            {
+                var peer = ws.PlayerSnapshot[p].Value;
+                if (peer.IsSpectator || peer.Disconnected) continue;
+                uint peerFrame;
+                lock (peer.Lock)
+                {
+                    peerFrame = peer.LastClientFrame;
+                }
+                simulationHorizon = Math.Max(simulationHorizon,
+                    Math.Min(peerFrame, maxTrustedHorizon));
             }
 
             for (int r = 0; r < ws.PlayerCount; r++)
@@ -1867,7 +1916,7 @@ namespace OVS.Rollback.Core
                         uint f = nextFrame;
                         inputMap.TryGetValue(lastAck, out uint lastKnownInput);
 
-                        while (f < lastClientFrame && predictedCount < MaxInputsPerFrame)
+                        while (f < simulationHorizon && predictedCount < MaxInputsPerFrame)
                         {
                             uint framesMissed = f - lastAck;
                             uint predicted = InputPredictor.Predict(lastKnownInput, framesMissed);
