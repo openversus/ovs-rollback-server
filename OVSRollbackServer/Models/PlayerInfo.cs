@@ -36,7 +36,10 @@ namespace OVS.Rollback.Models
 
         // ── Timing (Stopwatch monotonic timestamps) ──
         public long LastInputTimestamp { get; set; } = Stopwatch.GetTimestamp();
+        public long LastPacketTimestamp { get; set; } = Stopwatch.GetTimestamp();
+        public long LastAckTimestamp { get; set; }
         public long LastSentTimestamp { get; set; }
+        public bool InputSilenceLogged { get; set; }
 
         // ── Ping smoothing ──
         public float SmoothedPing { get; set; }
