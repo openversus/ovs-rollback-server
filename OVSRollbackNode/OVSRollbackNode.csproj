@@ -11,6 +11,7 @@
     <AssemblyName>OVS.Rollback.Node</AssemblyName>
     <ServerGarbageCollection>false</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <CETCompat>false</CETCompat>
     <TieredPGO>true</TieredPGO>
     <PublishReadyToRun>true</PublishReadyToRun>
     <!-- No ICU: the node formats nothing for a person, and a self-contained build without this needs libicu on the
