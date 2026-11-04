@@ -5,10 +5,12 @@
 #
 #   archive-nodes.sh VERSION OUTDIR [RID ...]     OUTDIR/OVS_Node_<VERSION>_win-x64.zip, OVS_Node_<VERSION>_linux-x64.tar.gz,
 #                                                 OVS_Node_<VERSION>_osx-x64.tar.gz, OVS_Node_<VERSION>_osx-arm64.tar.gz,
-#                                                 and SHA256SUMS-node beside them
+#                                                 OVS_Node_<VERSION>_all.zip (every platform in one, for hand installs;
+#                                                 the server never offers it), and SHA256SUMS-node beside them
 #
-# The names are the server's contract (ClientReleaseManifest: OVS_Node_<version>_<rid>.<zip|tar.gz>); the version must be
-# the release's. Debug symbols are left out. Tarballs keep the executable bits; the zip is for Windows, where none matter.
+# The per-platform names are the server's contract (ClientReleaseManifest: OVS_Node_<version>_<rid>.<zip|tar.gz>); the
+# version must be the release's. Debug symbols are left out. Tarballs keep the executable bits; the zips do not (Windows
+# needs none; a Unix node from a zip gets its bits from the mod before it starts).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 version=${1:?version}; out=${2:?output directory}; shift 2
@@ -37,4 +39,15 @@ for rid in $rids; do
     esac
     echo "$name ($(du -h "$out/$name" | cut -f1))"
 done
+# Every platform in one zip, laid out as the per-platform archives are.
+rm -rf "$stage/node"; mkdir -p "$stage/node"
+for rid in $rids; do
+    mkdir -p "$stage/node/$rid"
+    (cd "out/node-$rid" && find . -type f ! -name '*.pdb' -exec cp --parents {} "$stage/node/$rid/" \;)
+done
+[ -f out/OVS.Rollback.Node.sh ] && install -m 755 out/OVS.Rollback.Node.sh "$stage/node/OVS.Rollback.Node.sh"
+name="OVS_Node_${version}_all.zip"
+rm -f "$out/$name"
+(cd "$stage" && zip -q -r -X "$out/$name" node)
+echo "$name ($(du -h "$out/$name" | cut -f1))"
 (cd "$out" && sha256sum -b OVS_Node_"$version"_* > SHA256SUMS-node && cat SHA256SUMS-node)
