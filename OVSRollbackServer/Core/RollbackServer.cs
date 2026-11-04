@@ -178,6 +178,28 @@ namespace OVS.Rollback.Core
             else
                 _logger.LogWarning("RiftCalculation.ReportedPing is '{Configured}', which is not Raw, Smoothed or Peak. Using Raw.", reportedPing);
 
+            var parity = ServerConfiguration.Instance.RiftCalculation;
+            if (parity.HostPingParity)
+            {
+                if (!PingParity.TryGetAggregate(parity.PingParityAggregate, out string aggregate))
+                    _logger.LogWarning("RiftCalculation.PingParityAggregate is '{Configured}', which is not {Slowest} or {Mean}. Using {Slowest}.",
+                        parity.PingParityAggregate, PingParity.Slowest, PingParity.Mean, PingParity.Slowest);
+                float scale = PingParity.Scale(parity.PingParityScale);
+                if (scale != parity.PingParityScale)
+                    _logger.LogWarning("RiftCalculation.PingParityScale is {Configured}, which is not a positive number. Using 1.", parity.PingParityScale);
+                if (scale < 1f && !parity.PingParityEveryone)
+                    _logger.LogWarning("RiftCalculation.PingParityScale is {Scale} with PingParityEveryone off: the host's game is told less than the guests measure, so it gets less input delay than they do.", scale);
+                if (parity.PingParityTickRateCompensation && !parity.PingParityEveryone)
+                    _logger.LogWarning("RiftCalculation.PingParityTickRateCompensation is on with PingParityEveryone off: in a match faster than 60 Hz the host's game is told more than the guests measure, so it gets more input delay than they do.");
+                if (!PingParity.TryGetSource(parity.PingParitySource, out string source))
+                    _logger.LogWarning("RiftCalculation.PingParitySource is '{Configured}', which is not {Smoothed} or {Median}. Using {Smoothed}.",
+                        parity.PingParitySource, PingParity.Smoothed, PingParity.Median, PingParity.Smoothed);
+                _logger.LogInformation("Ping parity: {Aggregate} remote round trip ({Source}{Window}) x {Scale}{Compensation}, told to {Who}",
+                    aggregate, source, source == PingParity.Median ? $" over {parity.PingParityMedianWindowMs} ms" : "", scale,
+                    parity.PingParityTickRateCompensation ? ", tick rate compensated" : "",
+                    parity.PingParityEveryone ? "every active player" : "the host's game");
+            }
+
             GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
             if (_ownsReceiveLoop)
@@ -405,10 +427,22 @@ namespace OVS.Rollback.Core
                 if (type == ClientMessageType.QualityData)
                 {
                     var qPayload = (QualityDataPayload)clientMsg.Value.Payload;
-                    // Pre-match ping phase. Capped like the PlayerInputAck path: this value reaches
-                    // the client in RequestQualityData and in the first PlayerInput messages.
+                    // Pre-match ping phase. Capped like the PlayerInputAck path. Each sample joins the ring of recent
+                    // round trips, and what reaches the client (in RequestQualityData and the first PlayerInput
+                    // messages) and seeds the smoothed ping is the median of the samples so far, not the last one: the
+                    // client's input delay rises on any single value it is told and never falls.
                     if (player.PendingPings.TryRemove(qPayload.ServerMessageSequenceNumber, out long ts))
-                        player.Ping = (short)Math.Min(Stopwatch.GetElapsedTime(ts).TotalMilliseconds, 255);
+                    {
+                        short sample = (short)Math.Min(Stopwatch.GetElapsedTime(ts).TotalMilliseconds, 255);
+                        lock (player.Lock)
+                        {
+                            PushRecentPing(player, sample);
+                            short median = PingParity.MedianOf(player.RecentPings, player.RecentPingCount, player.RecentPingNext, player.RecentPings.Length);
+                            player.Ping = median;
+                            player.SmoothedPing = median;
+                            player.PingInitialized = true;
+                        }
+                    }
                 }
 
                 switch (type)
@@ -893,6 +927,7 @@ namespace OVS.Rollback.Core
                     {
                         if (!player.PingInitialized)
                         {
+                            // A player that had no ping phase (the median of it seeds the smoothed ping otherwise).
                             player.SmoothedPing = newPing;
                             player.PingInitialized = true;
                         }
@@ -960,11 +995,17 @@ namespace OVS.Rollback.Core
         /// from each value it is sent (about one frame per 24 ms above 60 ms, up to 10) and never
         /// lowers it during a match, so this choice sets how much input delay players end up with.
         /// </summary>
-        private static short PingToReport(PlayerInfo player, short newPing, RiftCalculationSettings s)
+        /// <summary>Adds a round trip to the player's ring of recent ones (under the player's lock).</summary>
+        private static void PushRecentPing(PlayerInfo player, short ping)
         {
-            player.RecentPings[player.RecentPingNext] = newPing;
+            player.RecentPings[player.RecentPingNext] = ping;
             player.RecentPingNext = (player.RecentPingNext + 1) % player.RecentPings.Length;
             player.RecentPingCount = Math.Min(player.RecentPingCount + 1, player.RecentPings.Length);
+        }
+
+        private static short PingToReport(PlayerInfo player, short newPing, RiftCalculationSettings s)
+        {
+            PushRecentPing(player, newPing);
 
             if (IsReportedPing(s, "Smoothed"))
                 return (short)player.SmoothedPing;
@@ -1724,19 +1765,32 @@ namespace OVS.Rollback.Core
             }
             uint serverFrame = match.CurrentFrame;
 
-            // ── Host ping parity: the local game is told the slowest remote round trip, so its input delay matches ──
-            short hostReportedPing = -1;
-            if (ServerConfiguration.Instance.RiftCalculation.HostPingParity)
+            // ── Ping parity: one number for the match from the remote active players' round trips (Core/PingParity).
+            //    The local game is told it, and every active player when PingParityEveryone. Spectators (the game pins
+            //    their delay) and bots (slots, not connections, so never in the snapshot) count for nothing. ──
+            var riftSettings = ServerConfiguration.Instance.RiftCalculation;
+            short parityPing = -1;
+            if (riftSettings.HostPingParity)
             {
-                float slowest = 0f;
+                float slowest = 0f, sum = 0f;
+                int count = 0;
+                int windowSamples = PingParity.WindowSamples(riftSettings.PingParityMedianWindowMs, match.TickIntervalMs);
                 for (int p = 0; p < ws.PlayerCount; p++)
                 {
                     var remote = ws.PlayerSnapshot[p].Value;
                     if (remote.IsSpectator || remote.IsLocal || remote.Disconnected) continue;
-                    lock (remote.Lock) { if (remote.PingInitialized && remote.SmoothedPing > slowest) slowest = remote.SmoothedPing; }
+                    lock (remote.Lock)
+                    {
+                        if (!remote.PingInitialized) continue;
+                        float roundTrip = PingParity.Sample(remote, riftSettings, windowSamples);
+                        if (roundTrip > slowest) slowest = roundTrip;
+                        sum += roundTrip;
+                        count++;
+                    }
                 }
-                hostReportedPing = (short)Math.Min(slowest, 255f);
+                parityPing = PingParity.Told(slowest, sum, count, riftSettings, match.TickIntervalMs);
             }
+            bool parityForEveryone = riftSettings.HostPingParity && riftSettings.PingParityEveryone;
 
             // ── Rift + disconnect check ──
             for (int p = 0; p < ws.PlayerCount; p++)
@@ -1748,10 +1802,9 @@ namespace OVS.Rollback.Core
                 }
                 lock (player.Lock)
                 {
-                    if (player.IsLocal)
-                    {
-                        player.PingOverride = hostReportedPing;
-                    }
+                    // Written every tick, so a remote player's override does not outlive the setting (the configuration
+                    // can be reloaded mid-process): -1 means told its own measured ping.
+                    player.PingOverride = (player.IsLocal || parityForEveryone) ? parityPing : (short)-1;
                     CalcRiftVariableTick(player, serverFrame, match.TickIntervalMs);
 
                     double inputSilenceSeconds = Stopwatch.GetElapsedTime(

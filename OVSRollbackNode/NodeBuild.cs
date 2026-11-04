@@ -19,6 +19,20 @@ namespace OVS.Rollback.Node
         /// </summary>
         public static bool Unlocked { get; } = string.Equals(Metadata("NodeUnlocked"), "true", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>The marker the version is stored behind (OVSRollbackNode.csproj: NodeVersion), which the mod's updater scans the file for.</summary>
+        public const string VersionMarker = "OVS-NODE-VERSION:";
+
+        /// <summary>This build's version as the mod's updater compares it (a release's, or build.sh's git stamp); "unversioned" for a bare dotnet build.</summary>
+        public static string Version { get; } = ParseVersion(Metadata("NodeVersion"));
+
+        internal static string ParseVersion(string? metadata)
+        {
+            if (metadata is null || !metadata.StartsWith(VersionMarker, StringComparison.Ordinal))
+                return "unversioned";
+            int end = metadata.IndexOf(';', VersionMarker.Length);
+            return end < 0 ? metadata[VersionMarker.Length..] : metadata[VersionMarker.Length..end];
+        }
+
         /// <summary>The server asked for (--server, which the mod sets from the game's ServerUrl, else the environment's); null when none.</summary>
         public static string? Requested { get; private set; }
 

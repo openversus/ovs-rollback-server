@@ -337,6 +337,13 @@ dotnet OVSRollbackServer.dll
 | `RiftUpdateThreshold` | uint | 500 | Legacy: update every frame until this frame |
 | `HysteresisEnter` / `HysteresisExit` | float | 1.25 / 0.75 | ClientMatched: start sending a correction above Enter, send exactly 0 once below Exit |
 | `SmallErrorAlpha` / `SmallErrorBelow` | float | 0.2 / 3.0 | ClientMatched: smoothing for errors under SmallErrorBelow frames |
+| `HostPingParity` | bool | false | P2P node only (on in `node.appsettings.json`): the host's game is told one match-wide ping formed from the remote active players' round trips, so its input delay matches theirs. The switch for the three settings below |
+| `PingParityAggregate` | string | Slowest | How the match-wide ping is formed: `Slowest` or `Mean` of the remote active players' smoothed round trips. Spectators, bots, players without a round trip yet and the host's own game never count |
+| `PingParityScale` | float | 1.0 | Multiplies the match-wide ping. 1: input delay covers the one-way trip to the host, nothing rolls back. 0.5: what a relay midway between two players would have told each, so delay covers half the trip and rollback the rest |
+| `PingParityEveryone` | bool | false | Tell every active player the match-wide ping, not only the host's game. The symmetric form (a scale below 1) needs it; without it a scale below 1 favours the host |
+| `PingParitySource` | string | Smoothed | Each remote player's round trip as the match-wide ping reads it: `Smoothed` (the exponential average) or `Median` (the median of the player's newest raw round trips over `PingParityMedianWindowMs`). The game's input delay rises on any single value it is told and never falls, so a spike that reaches the average is a permanent extra frame; a median ignores any minority of spikes. The rift keeps the average |
+| `PingParityMedianWindowMs` | uint | 1000 | Median only: the window in milliseconds of match time (one sample per tick, at most 256) |
+| `PingParityTickRateCompensation` | bool | false | P2P node: on in `node.appsettings.json`. Scale the told ping by 60 Hz's frame over the match's, so the delay it buys covers the same milliseconds at 66 or 72 Hz as at 60 (the game's delay curve counts 1/60 s frames). Without `PingParityEveryone` it inflates only the host's number |
 
 **What the client does with the rift.** The game client resets its clock correction on every
 PlayerInput and derives it from that message's rift alone. It ignores anything within ±1 frame,

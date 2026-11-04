@@ -363,6 +363,12 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.SmallErrorAlpha = GetEnvFloat("RiftCalculation__SmallErrorAlpha", RiftCalculation.SmallErrorAlpha);
             RiftCalculation.SmallErrorBelow = GetEnvFloat("RiftCalculation__SmallErrorBelow", RiftCalculation.SmallErrorBelow);
             RiftCalculation.HostPingParity = GetEnvBool("RiftCalculation__HostPingParity", RiftCalculation.HostPingParity);
+            RiftCalculation.PingParityAggregate = GetEnvString("RiftCalculation__PingParityAggregate", RiftCalculation.PingParityAggregate) ?? "Slowest";
+            RiftCalculation.PingParityScale = GetEnvFloat("RiftCalculation__PingParityScale", RiftCalculation.PingParityScale);
+            RiftCalculation.PingParityEveryone = GetEnvBool("RiftCalculation__PingParityEveryone", RiftCalculation.PingParityEveryone);
+            RiftCalculation.PingParitySource = GetEnvString("RiftCalculation__PingParitySource", RiftCalculation.PingParitySource) ?? "Smoothed";
+            RiftCalculation.PingParityMedianWindowMs = GetEnvUInt("RiftCalculation__PingParityMedianWindowMs", RiftCalculation.PingParityMedianWindowMs);
+            RiftCalculation.PingParityTickRateCompensation = GetEnvBool("RiftCalculation__PingParityTickRateCompensation", RiftCalculation.PingParityTickRateCompensation);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -471,8 +477,12 @@ namespace OVS.Rollback.Configuration
     /// </summary>
     public class NodeSettings
     {
-        /// <summary>The rendezvous service, as host:port (UDP). Empty disables P2P: every match is forwarded to RelayFallback.</summary>
-        [NodeScope(NodeScope.Player)]
+        /// <summary>
+        /// The rendezvous service, as host:port (UDP). Empty disables P2P: every match is forwarded to RelayFallback.
+        /// The same for everyone in a match: one node without a rendezvous cannot be reached, and the whole match
+        /// goes to the relay for every player in it.
+        /// </summary>
+        [NodeScope(NodeScope.Fairness)]
         public string Rendezvous { get; set; } = String.Empty;
         /// <summary>
         /// Bench only: a fixed relay (host:port) used when no peer path opens, instead of asking the server for
@@ -620,14 +630,52 @@ namespace OVS.Rollback.Configuration
         public float SmallErrorAlpha { get; set; } = 0.2f;
         public float SmallErrorBelow { get; set; } = 3.0f;
         /// <summary>
-        /// P2P host fairness. A game on the same machine as the engine (loopback) is told the slowest remote
-        /// player's round trip as its ping, so it raises its input delay as far as they do. The games' clocks are
-        /// already aligned by the rift (the half-ping term in the rift only undoes the staleness of a remote
-        /// client's reported frame); measured 2026-10-03 at 80 and 160 ms round trips: with equal input delay both
-        /// sides hold the other's inputs the same number of frames ahead, and shifting the host's clock as well
-        /// made it worse by half the round trip. Off for a relay.
+        /// P2P fairness (the switch for the PingParity settings below). A game on the same machine as the engine
+        /// (loopback) is told one match-wide ping formed from the remote active players' round trips (by default the
+        /// slowest), so it raises its input delay as far as they do. The games' clocks are already aligned by the
+        /// rift (the half-ping term in the rift only undoes the staleness of a remote client's reported frame);
+        /// measured 2026-10-03 at 80 and 160 ms round trips: with equal input delay both sides hold the other's
+        /// inputs the same number of frames ahead, and shifting the host's clock as well made it worse by half the
+        /// round trip. Off for a relay. See Core/PingParity.
         /// </summary>
         public bool HostPingParity { get; set; } = false;
+        /// <summary>
+        /// How the match-wide ping is formed from the remote active players' smoothed round trips: "Slowest" (the
+        /// default) or "Mean". Spectators, bots and players without a round trip yet are never counted, nor is the
+        /// host's own game. An unrecognised name means Slowest, with a warning at startup.
+        /// </summary>
+        public string PingParityAggregate { get; set; } = "Slowest";
+        /// <summary>
+        /// Multiplies the match-wide ping before it is told. 1 (the default): input delay covers the one-way trip
+        /// to the host and nothing rolls back. 0.5: each player is told what a relay midway between two players
+        /// would have told them, so the delay covers half the trip and rollback absorbs the rest. With
+        /// PingParityEveryone off, a scale below 1 tells the host less than the guests measure, so the host gets
+        /// less input delay than they do (warned at startup). Not a positive number means 1.
+        /// </summary>
+        public float PingParityScale { get; set; } = 1.0f;
+        /// <summary>
+        /// Tell every active player the match-wide ping, not only the host's game. The symmetric form (a scale
+        /// below 1) needs it. Spectators are never told it: the game pins their input delay anyway.
+        /// </summary>
+        public bool PingParityEveryone { get; set; } = false;
+        /// <summary>
+        /// What each remote player's round trip is read from for the match-wide ping: "Smoothed" (the default; the
+        /// exponential average, PingAlpha) or "Median" (the median of the player's newest raw round trips over
+        /// PingParityMedianWindowMs). The game's input delay only ever rises and is checked against every value it
+        /// is told, so a single spike that reaches the average is a permanent extra frame for the match; the median
+        /// of a second of samples ignores any minority of spikes. The rift keeps using the average either way.
+        /// </summary>
+        public string PingParitySource { get; set; } = "Smoothed";
+        /// <summary>Median only: the window, in milliseconds of match time (one sample per tick; at most 256 samples).</summary>
+        public uint PingParityMedianWindowMs { get; set; } = 1000;
+        /// <summary>
+        /// Scale the told ping by 60 Hz's frame over the match's, so the input delay it buys covers the same
+        /// milliseconds at any tick rate. The game's delay curve counts frames of 1/60 s, so at 66 or 72 Hz the
+        /// same told value covers less of the trip: a 160 ms round trip at 72 Hz has 3 ms to spare at scale 1. Off (the
+        /// default) tells the measured value at every rate. With PingParityEveryone off it inflates only the host's
+        /// number (warned at startup).
+        /// </summary>
+        public bool PingParityTickRateCompensation { get; set; } = false;
     }
 
     [NodeScope(NodeScope.Fairness)]

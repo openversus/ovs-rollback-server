@@ -64,7 +64,7 @@ namespace OVS.Rollback.Node
                 settingsPath, config.Node.Rendezvous, config.Node.RelayFallback, config.Server.BaseUrl);
             ushort port = Singletons.PortSetOnCommandLine ? Singletons.Port : config.Server.Port;
 
-            logger.LogInformation("OVS Rollback Node version {Version}, engine built {CompileTime}", engineVersion, CompileTime.CompileDateTime);
+            logger.LogInformation("OVS Rollback Node {NodeVersion} (engine {Version}, built {CompileTime})", NodeBuild.Version, engineVersion, CompileTime.CompileDateTime);
             if (config.Server.FireMatchEvents)
             {
                 logger.LogWarning("Server.FireMatchEvents is on; a node has no MatchUpdateKey, so every match event it sends will be rejected. Turn it off in appsettings.json.");

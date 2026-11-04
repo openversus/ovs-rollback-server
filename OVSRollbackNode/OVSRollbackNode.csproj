@@ -30,9 +30,16 @@
     <NodeUnlocked Condition="'$(NodeUnlocked)' == '' and '$(Configuration)' == 'Debug'">true</NodeUnlocked>
     <NodeUnlocked Condition="'$(NodeUnlocked)' == ''">false</NodeUnlocked>
   </PropertyGroup>
+  <!-- The node's version, as the mod's updater reads it: NodeVersion (build.sh passes NODE_VERSION, else its git stamp; a
+       release build gets the client release's version). Stored with a marker around it so the updater can find it in
+       the published single file without running it: "OVS-NODE-VERSION:<version>;". -->
+  <PropertyGroup>
+    <NodeVersion Condition="'$(NodeVersion)' == ''">unversioned</NodeVersion>
+  </PropertyGroup>
   <ItemGroup>
     <AssemblyMetadata Include="NodeTrust" Value="$(NodeTrust)" />
     <AssemblyMetadata Include="NodeUnlocked" Value="$(NodeUnlocked)" />
+    <AssemblyMetadata Include="NodeVersion" Value="OVS-NODE-VERSION:$(NodeVersion);" />
   </ItemGroup>
   <Target Name="RequireNodeTrust" BeforeTargets="BeforeBuild" Condition="'$(NodeUnlocked)' != 'true' and '$(NodeTrust)' == ''">
     <Error Text="A locked node needs the servers it trusts: -p:NodeTrust=&quot;&lt;url&gt; &lt;public key&gt; ...&quot; (build.sh writes it from pki/&lt;env&gt;/), or -p:NodeUnlocked=true for a bench build." />

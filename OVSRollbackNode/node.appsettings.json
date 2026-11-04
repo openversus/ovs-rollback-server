@@ -16,7 +16,7 @@
   },
 
   "Node": {
-    "Rendezvous": "",
+    "Rendezvous": "p2p.openversus.org:41235",
     "RelayFallback": "",
     "PunchTimeoutSeconds": 8,
     "PunchDeadlineSeconds": 30,
@@ -73,7 +73,13 @@
     "HysteresisExit": 0.75,
     "SmallErrorAlpha": 0.2,
     "SmallErrorBelow": 3.0,
-    "HostPingParity": true
+    "HostPingParity": true,
+    "PingParityAggregate": "Slowest",
+    "PingParityScale": 0.5,
+    "PingParityEveryone": true,
+    "PingParitySource": "Smoothed",
+    "PingParityMedianWindowMs": 1000,
+    "PingParityTickRateCompensation": true
   },
 
   "PingPhase": {

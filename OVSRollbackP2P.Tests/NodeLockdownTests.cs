@@ -80,6 +80,9 @@ public class NodeLockdownTests
     [Theory]
     // The fairness list as confirmed on 2026-10-04, a sample from each part of it.
     [InlineData("RiftCalculation", "HostPingParity", NodeScope.Fairness)]
+    [InlineData("RiftCalculation", "PingParityScale", NodeScope.Fairness)]
+    [InlineData("RiftCalculation", "PingParityEveryone", NodeScope.Fairness)]
+    [InlineData("RiftCalculation", "PingParityTickRateCompensation", NodeScope.Fairness)]
     [InlineData("GameLogic", "DisconnectTimeoutSeconds", NodeScope.Fairness)]
     [InlineData("InputValidation", "MaxInputsPerSecond", NodeScope.Fairness)]
     [InlineData("DesyncDetection", "KickDesyncingPlayer", NodeScope.Fairness)]
@@ -89,7 +92,8 @@ public class NodeLockdownTests
     [InlineData("Server", "MaxPlayers", NodeScope.Fairness)]
     [InlineData("Networking", "ReceiveBufferSize", NodeScope.Fairness)]
     [InlineData("Networking", "HttpTimeoutSeconds", NodeScope.Fairness)]
-    [InlineData("Node", "Rendezvous", NodeScope.Player)]
+    [InlineData("Node", "Rendezvous", NodeScope.Fairness)]
+    [InlineData("Node", "RelayFallback", NodeScope.Player)]
     [InlineData("Node", "PortFile", NodeScope.Player)]
     [InlineData("Networking", "DscpValue", NodeScope.Player)]
     [InlineData("Logging", "MinimumLevel", NodeScope.Player)]
@@ -128,7 +132,7 @@ public class NodeLockdownTests
             c.RiftCalculation.TargetRift = 3.0f;
             c.Networking.ReceiveBufferSize = 512;
             c.Networking.DscpValue = 0;
-            c.Node.Rendezvous = "p2p.example:41235";
+            c.Node.RelayFallback = "relay.example:57000";
         });
 
         var changes = Apply(live, BuiltIn(), null, unlocked: false);
@@ -136,7 +140,7 @@ public class NodeLockdownTests
         Assert.Equal(0.5f, live.RiftCalculation.TargetRift);
         Assert.Equal(65536, live.Networking.ReceiveBufferSize);
         Assert.Equal(0, live.Networking.DscpValue);
-        Assert.Equal("p2p.example:41235", live.Node.Rendezvous);
+        Assert.Equal("relay.example:57000", live.Node.RelayFallback);
         Assert.Equal(
             [new Change("Networking.ReceiveBufferSize", ChangeKind.PlayerValueOverridden, "512", "65536"),
              new Change("RiftCalculation.TargetRift", ChangeKind.PlayerValueOverridden, "3", "0.5")],

@@ -1,19 +1,23 @@
 #!/usr/bin/env bash
 # Builds the OpenVersus rollback server and everything that ships beside it.
 #
-#   ./build.sh                        everything: the tests, the P2P node for win-x64 and linux-x64, the rendezvous
+#   ./build.sh                        everything: the tests, the P2P node for win-x64, linux-x64, osx-x64 and osx-arm64,
+#                                     the rendezvous
 #                                     service for linux-x64 (plus a tarball to carry to the server), and the rollback
 #                                     server's Docker image
 #   ./build.sh TAG [CONTEXT]          the same, with the image tagged ovs-rollback-server-csharp:TAG and built from
 #                                     CONTEXT (this script's original form; TAG defaults to ready-to-run, CONTEXT to .)
 #   ./build.sh test                   the unit tests only
-#   ./build.sh node [--bench] [RID ...]  the node only (default: win-x64 linux-x64)   -> out/node-<RID>/
+#   ./build.sh node [--bench] [RID ...]  the node only (default: win-x64 linux-x64 osx-x64 osx-arm64) -> out/node-<RID>/,
+#                                     plus out/OVS.Rollback.Node.sh, the launcher that picks a machine's node (macOS)
 #   ./build.sh rendezvous             the rendezvous only                             -> out/rendezvous-linux-x64/, .tar.gz
 #   ./build.sh publish [--bench] [RID ...]  node and rendezvous, no tests, no image
 #   ./build.sh image [TAG] [CONTEXT]  the Docker image only
 #
 # Every build in a run is stamped with the same version (git commit date, branch, short hash) and compile time, as the
 # image always was; the two stamped source files are put back as they were when the script ends, edits included.
+# NODE_VERSION=<version> names the node build as the mod's updater compares it (a client release passes its own version;
+# default: the git stamp); OVSRollbackNode/tools/archive-nodes.sh packs out/node-*/ into the release's node archives.
 # EXPERIMENTAL_BUILD=<label> makes the server log "EXPERIMENTAL BUILD: <label>" at startup.
 #
 # Needs the .NET 10 SDK; the image also needs Docker. The node is self-contained ReadyToRun, one file per platform, so
@@ -74,7 +78,8 @@ do_test() {
 }
 
 # The P2P node players run beside the game: self-contained, single file, ReadyToRun, no runtime to install.
-# Linux is a first-class target (Steam Deck and desktop Linux players: the mod starts the ELF from inside Proton).
+# Linux is a first-class target (Steam Deck and desktop Linux players: the mod starts the ELF from inside Proton), and
+# macOS is built for both Intel and Apple silicon (osx-x64, osx-arm64; crossgen2 cross-compiles them from here).
 do_node() {
     local bench=0 rids="" arg
     for arg in "$@"; do
@@ -84,7 +89,7 @@ do_node() {
             *) rids+="$arg " ;;
         esac
     done
-    rids=${rids:-"win-x64 linux-x64"}
+    rids=${rids:-"win-x64 linux-x64 osx-x64 osx-arm64"}
     local trust="" trusted="" env file
     for env in ${NODE_PKI:-prod testing}; do
         for file in pki/$env/server-url.txt pki/$env/node-config-public-key.txt; do
@@ -105,12 +110,15 @@ do_node() {
         suffix=-bench
     fi
     say "the node trusts: $trusted"
+    # The launcher that picks a machine's node (the mod starts it on macOS): beside the per-platform folders.
+    mkdir -p out
+    install -m 755 OVSRollbackNode/OVS.Rollback.Node.sh out/OVS.Rollback.Node.sh
     for rid in $rids; do
         local dir="out/node-$rid$suffix"
         say "publishing the node for $rid${suffix:+ (bench build)}"
         dotnet publish OVSRollbackNode/OVSRollbackNode.csproj -c Release -r "$rid" --self-contained true \
             -p:PublishSingleFile=true -p:PublishReadyToRun=true -p:IncludeNativeLibrariesForSelfExtract=true \
-            "-p:NodeTrust=$trust" -o "$dir" --nologo -v q
+            "-p:NodeTrust=$trust" "-p:NodeVersion=${NODE_VERSION:-$GITBASEDVERSION}" -o "$dir" --nologo -v q
         local exe
         exe=$(ls "$dir" | grep -E '^OVS\.Rollback\.Node(\.exe)?$') || fail "$dir has no node executable"
         say "node $rid: $dir/$exe ($(du -sh "$dir" | cut -f1))"
