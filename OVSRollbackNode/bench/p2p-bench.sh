@@ -15,7 +15,7 @@
 # NODE_ENV_N (node N only, exported) add docker -e options, e.g. NODE_ENV_4="-e Node__Rendezvous=<gateway>:9" leaves only
 # node 4 without a rendezvous.
 #
-# Needs the bench's compose stack up (ovs-http-server dotnet/local/compose/bench-compose.sh ps) and
+# Needs the bench's compose stack up (ovs-http-server local/compose/bench-compose.sh ps) and
 # ~/git/ovs-synthetic-client. The players join the stack's network (NETWORK, default ovs; run.sh) and the nodes share
 # their namespaces: they reach the match flow through the router (NODE_SERVER, default http://router:8000), and the
 # rendezvous and the relay, which run on the host's network, at the network's gateway. The stack's rendezvous
