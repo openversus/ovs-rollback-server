@@ -344,6 +344,7 @@ dotnet OVSRollbackServer.dll
 | `PingParitySource` | string | Smoothed | Each remote player's round trip as the match-wide ping reads it: `Smoothed` (the exponential average) or `Median` (the median of the player's newest raw round trips over `PingParityMedianWindowMs`). The game's input delay rises on any single value it is told and never falls, so a spike that reaches the average is a permanent extra frame; a median ignores any minority of spikes. The rift keeps the average |
 | `PingParityMedianWindowMs` | uint | 1000 | Median only: the window in milliseconds of match time (one sample per tick, at most 256) |
 | `PingParityTickRateCompensation` | bool | false | P2P node: on in `node.appsettings.json`. Scale the told ping by 60 Hz's frame over the match's, so the delay it buys covers the same milliseconds at 66 or 72 Hz as at 60 (the game's delay curve counts 1/60 s frames). Without `PingParityEveryone` it inflates only the host's number |
+| `ReportPacketLoss` | bool | true | Tell each player their packet loss in every input message: the share of the input messages sent to them over the last 5 seconds that they never acknowledged (either direction's loss). The game adds it to its network statistics; its netcode has no other use of it. `false` sends 0, as before it was measured. Spectators are never told it |
 
 **What the client does with the rift.** The game client resets its clock correction on every
 PlayerInput and derives it from that message's rift alone. It ignores anything within ±1 frame,

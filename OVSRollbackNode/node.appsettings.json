@@ -77,9 +77,10 @@
     "PingParityAggregate": "Slowest",
     "PingParityScale": 0.5,
     "PingParityEveryone": true,
-    "PingParitySource": "Smoothed",
+    "PingParitySource": "Median",
     "PingParityMedianWindowMs": 1000,
-    "PingParityTickRateCompensation": true
+    "PingParityTickRateCompensation": true,
+    "ReportPacketLoss": true
   },
 
   "PingPhase": {

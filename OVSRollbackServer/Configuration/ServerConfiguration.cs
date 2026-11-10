@@ -369,6 +369,7 @@ namespace OVS.Rollback.Configuration
             RiftCalculation.PingParitySource = GetEnvString("RiftCalculation__PingParitySource", RiftCalculation.PingParitySource) ?? "Smoothed";
             RiftCalculation.PingParityMedianWindowMs = GetEnvUInt("RiftCalculation__PingParityMedianWindowMs", RiftCalculation.PingParityMedianWindowMs);
             RiftCalculation.PingParityTickRateCompensation = GetEnvBool("RiftCalculation__PingParityTickRateCompensation", RiftCalculation.PingParityTickRateCompensation);
+            RiftCalculation.ReportPacketLoss = GetEnvBool("RiftCalculation__ReportPacketLoss", RiftCalculation.ReportPacketLoss);
 
             // Ping phase settings
             PingPhase.TotalPings = GetEnvUInt("PingPhase__TotalPings", PingPhase.TotalPings);
@@ -676,6 +677,13 @@ namespace OVS.Rollback.Configuration
         /// number (warned at startup).
         /// </summary>
         public bool PingParityTickRateCompensation { get; set; } = false;
+        /// <summary>
+        /// Tell each player their packet loss in PlayerInput: the share of the PlayerInputs sent to them over the
+        /// last seconds that they never acknowledged (Core/PacketLoss). The game adds it to its network statistics
+        /// (last, min, max, mean); its netcode has no other use of it. Off: 0 is sent, as before the figure was
+        /// measured. Spectators are never told it (their game skips it).
+        /// </summary>
+        public bool ReportPacketLoss { get; set; } = true;
     }
 
     [NodeScope(NodeScope.Fairness)]

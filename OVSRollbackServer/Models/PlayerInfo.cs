@@ -67,6 +67,10 @@ namespace OVS.Rollback.Models
         // ── Thread-safe maps (replaces ThreadSafeMap) ──
         public ConcurrentDictionary<uint, uint> MissedInputs { get; } = new();
         public ConcurrentDictionary<uint, long> PendingPings { get; } = new();
+        /// <summary>The PlayerInputs sent to this player that were acknowledged or lost, over the last seconds (Core/PacketLoss).</summary>
+        public Core.PacketLossWindow PacketLoss { get; } = new();
+        /// <summary>The packet loss told to this player in PlayerInput (hundredths of a percent); 0 with RiftCalculation.ReportPacketLoss off.</summary>
+        public short PacketLossWire { get; set; }
 
         // ── Desync detection ──
         public int DesyncCount { get; set; }

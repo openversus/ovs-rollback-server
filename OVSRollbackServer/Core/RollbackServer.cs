@@ -410,6 +410,19 @@ namespace OVS.Rollback.Core
                 {
                     if (header.Sequence <= player.LastSeqRecv)
                     {
+                        // An acknowledgement overtaken by a later one goes no further, but the PlayerInput it names
+                        // did arrive: it is settled as acknowledged, not left to time out as lost (Core/PacketLoss).
+                        // No ping is taken from it: it is late by a detour of unknown length.
+                        if (type == ClientMessageType.PlayerInputAck && !player.IsSpectator
+                            && clientMsg.Value.Payload is PlayerInputAckPayload overtaken
+                            && player.PendingPings.TryRemove(overtaken.ServerMessageSequenceNumber, out _))
+                        {
+                            lock (player.Lock)
+                            {
+                                player.PacketLoss.Acked();
+                            }
+                        }
+
                         return;
                     }
                     player.LastSeqRecv = header.Sequence;
@@ -436,6 +449,8 @@ namespace OVS.Rollback.Core
                         short sample = (short)Math.Min(Stopwatch.GetElapsedTime(ts).TotalMilliseconds, 255);
                         lock (player.Lock)
                         {
+                            // A ping-phase request is a message sent and answered like any other (Core/PacketLoss).
+                            player.PacketLoss.Acked();
                             PushRecentPing(player, sample);
                             short median = PingParity.MedianOf(player.RecentPings, player.RecentPingCount, player.RecentPingNext, player.RecentPings.Length);
                             player.Ping = median;
@@ -918,8 +933,10 @@ namespace OVS.Rollback.Core
                         player.AckedFrames[i] = acked;
                 }
 
-                if (player.PendingPings.TryRemove(payload.ServerMessageSequenceNumber, out long ts))
+                // A spectator's acknowledgements carry on its acked frames above and nothing else (see SendPlayerInput).
+                if (!player.IsSpectator && player.PendingPings.TryRemove(payload.ServerMessageSequenceNumber, out long ts))
                 {
+                    player.PacketLoss.Acked();
                     short newPing = (short)Math.Min(
                         Stopwatch.GetElapsedTime(ts).TotalMilliseconds, 255);
 
@@ -985,6 +1002,29 @@ namespace OVS.Rollback.Core
                     match.MatchId,
                     string.Join(", ", reporters.Select(p => $"player {p.PlayerIndex} (name: {p.PlayerName}) = team {p.ReportedWinningTeam}")));
             }
+        }
+
+        /// <summary>
+        /// Closes a second of a player's packet loss (Core/PacketLoss): every PlayerInput sent to them more than
+        /// PacketLossWindow.TimeoutMs ago and still unacknowledged counts as lost and is no longer waited for (which
+        /// also keeps PendingPings from growing with every lost packet), and the figure told to them is the window's,
+        /// or 0 when <paramref name="report"/> is off. Under the player's lock.
+        /// </summary>
+        private static void ClosePacketLossSecond(PlayerInfo player, bool report)
+        {
+            long cutoff = Stopwatch.GetTimestamp() - Stopwatch.Frequency * PacketLossWindow.TimeoutMs / 1000;
+            int lost = 0;
+            foreach (var pending in player.PendingPings)
+            {
+                if (pending.Value < cutoff && player.PendingPings.TryRemove(pending.Key, out _))
+                {
+                    lost++;
+                }
+            }
+
+            player.PacketLoss.Lost(lost);
+            float percent = player.PacketLoss.Roll();
+            player.PacketLossWire = report ? PacketLossWindow.Wire(percent) : (short)0;
         }
 
         private static bool IsReportedPing(RiftCalculationSettings s, string mode)
@@ -1791,6 +1831,8 @@ namespace OVS.Rollback.Core
                 parityPing = PingParity.Told(slowest, sum, count, riftSettings, match.TickIntervalMs);
             }
             bool parityForEveryone = riftSettings.HostPingParity && riftSettings.PingParityEveryone;
+            // Once a second of match time: the PlayerInputs each player never acknowledged become their packet loss.
+            bool closeLossSecond = serverFrame % Math.Max(1u, (uint)MathF.Round(1000f / match.TickIntervalMs)) == 0;
 
             // ── Rift + disconnect check ──
             for (int p = 0; p < ws.PlayerCount; p++)
@@ -1806,6 +1848,10 @@ namespace OVS.Rollback.Core
                     // can be reloaded mid-process): -1 means told its own measured ping.
                     player.PingOverride = (player.IsLocal || parityForEveryone) ? parityPing : (short)-1;
                     CalcRiftVariableTick(player, serverFrame, match.TickIntervalMs);
+                    if (closeLossSecond && !player.Disconnected)
+                    {
+                        ClosePacketLossSecond(player, riftSettings.ReportPacketLoss);
+                    }
 
                     double inputSilenceSeconds = Stopwatch.GetElapsedTime(
                         player.LastInputTimestamp).TotalSeconds;
@@ -1904,6 +1950,7 @@ namespace OVS.Rollback.Core
 
                 uint lastClientFrame;
                 short ping;
+                short packetLoss;
                 float reportedRift;
                 lock (recipient.Lock)
                 {
@@ -1911,6 +1958,7 @@ namespace OVS.Rollback.Core
                         ws.AckedFrames[i] = recipient.AckedFrames[i];
                     lastClientFrame = recipient.LastClientFrame;
                     ping = recipient.PingOverride >= 0 ? recipient.PingOverride : recipient.Ping;
+                    packetLoss = recipient.PacketLossWire;  // 0 for a spectator: never measured
                     reportedRift = recipient.ReportedRift;  // clamped, and after the algorithm's report step
                 }
 
@@ -2015,6 +2063,7 @@ namespace OVS.Rollback.Core
                 ws.Payload.NumPlayers = (byte)match.TeamSlotCount;
                 ws.Payload.NumPredictedOverrides = numPredictedOverrides;
                 ws.Payload.Ping = ping;
+                ws.Payload.PacketLossPercent = packetLoss;
                 ws.Payload.Rift = reportedRift;
                 // Highest frame on which all active players' checksums agreed. The client
                 // only records this (+1) as a statistic; it frees nothing and changes nothing
@@ -2184,7 +2233,13 @@ namespace OVS.Rollback.Core
             }
 
             player.LastSentTimestamp = ts;
-            player.PendingPings[sequence] = ts;
+            // The acknowledgement of this message is what the player's ping and packet loss are measured from. Not a
+            // spectator's: its game skips the ping, the loss and the rift of every PlayerInput (it follows the
+            // confirmed frames at a fixed delay), so nothing is measured for one.
+            if (!player.IsSpectator)
+            {
+                player.PendingPings[sequence] = ts;
+            }
 
         }
 
